@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenAI Architecture — Travel Interview Tool</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0B0F1A;
+    color: #ededf3;
+    min-height: 100vh;
+    padding: 40px 24px 80px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 300;
+    letter-spacing: -0.5px;
+    color: #ededf3;
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: #70707d;
+    font-size: 14px;
+    margin-bottom: 52px;
+  }
+
+  /* ── Layout ── */
+  .page { max-width: 1100px; margin: 0 auto; }
+
+  /* ── Phase strip ── */
+  .phases {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 48px;
+  }
+  .phase {
+    padding: 16px 14px;
+    text-align: center;
+    border-right: 1px solid rgba(255,255,255,0.08);
+    cursor: pointer;
+    transition: background 0.2s;
+    position: relative;
+  }
+  .phase:last-child { border-right: none; }
+  .phase:hover { background: rgba(107,42,234,0.08); }
+  .phase.active { background: rgba(107,42,234,0.15); }
+  .phase.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: #6B2AEA;
+  }
+  .phase-num {
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: #6B2AEA;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .phase-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #ededf3;
+    margin-bottom: 3px;
+  }
+  .phase-model {
+    font-size: 11px;
+    color: #70707d;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  /* ── Section title ── */
+  .section-title {
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #6B2AEA;
+    margin-bottom: 16px;
+    margin-top: 44px;
+  }
+
+  /* ── Main flow diagram ── */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .flow-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .flow-node {
+    background: #1e1e2a;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 16px 18px;
+    flex: 1;
+    transition: border-color 0.2s;
+  }
+  .flow-node:hover { border-color: rgba(107,42,234,0.4); }
+
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    flex-shrink: 0;
+    color: #3d3d52;
+    font-size: 18px;
+  }
+  .flow-arrow.down {
+    width: auto;
+    height: 28px;
+    margin: 0 0 0 24px;
+    transform: rotate(90deg);
+  }
+
+  .node-label {
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #6B2AEA;
+    margin-bottom: 5px;
+  }
+  .node-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #ededf3;
+    margin-bottom: 4px;
+  }
+  .node-desc {
+    font-size: 12px;
+    color: #c3c3cc;
+    line-height: 1.5;
+  }
+  .node-code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    background: rgba(107,42,234,0.12);
+    border: 1px solid rgba(107,42,234,0.2);
+    border-radius: 5px;
+    padding: 8px 10px;
+    color: #A78BFA;
+    margin-top: 8px;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  /* ── Deep-dive cards ── */
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .card {
+    background: #1e1e2a;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 22px;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #ededf3;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pill {
+    font-size: 10px;
+    font-family: monospace;
+    background: rgba(107,42,234,0.2);
+    color: #A78BFA;
+    border: 1px solid rgba(107,42,234,0.3);
+    border-radius: 100px;
+    padding: 2px 8px;
+  }
+  .pill.green {
+    background: rgba(16,185,129,0.15);
+    color: #6ee7b7;
+    border-color: rgba(16,185,129,0.25);
+  }
+  .pill.orange {
+    background: rgba(251,146,60,0.12);
+    color: #fdba74;
+    border-color: rgba(251,146,60,0.2);
+  }
+
+  .step-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  .step-list li {
+    display: flex;
+    gap: 10px;
+    font-size: 13px;
+    color: #c3c3cc;
+    line-height: 1.5;
+  }
+  .step-num {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    background: rgba(107,42,234,0.2);
+    border: 1px solid rgba(107,42,234,0.35);
+    border-radius: 50%;
+    font-size: 10px;
+    color: #A78BFA;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    margin-top: 1px;
+  }
+
+  code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    background: rgba(255,255,255,0.07);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: #A78BFA;
+  }
+
+  /* ── Research flow ── */
+  .research-flow {
+    background: #1e1e2a;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 24px;
+    margin-top: 16px;
+  }
+
+  .rf-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .rf-row:last-child { border-bottom: none; }
+
+  .rf-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+  .rf-icon.purple { background: rgba(107,42,234,0.2); }
+  .rf-icon.blue   { background: rgba(59,130,246,0.15); }
+  .rf-icon.green  { background: rgba(16,185,129,0.15); }
+  .rf-icon.orange { background: rgba(251,146,60,0.12); }
+
+  .rf-content { flex: 1; }
+  .rf-label {
+    font-size: 11px;
+    color: #6B2AEA;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  .rf-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ededf3;
+    margin-bottom: 4px;
+  }
+  .rf-desc {
+    font-size: 12px;
+    color: #c3c3cc;
+    line-height: 1.5;
+  }
+
+  /* ── Handover diagram ── */
+  .handover {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 0;
+    align-items: center;
+    background: #1e1e2a;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-top: 16px;
+  }
+  .ho-box {
+    padding: 24px;
+  }
+  .ho-box.left { border-right: 1px solid rgba(255,255,255,0.06); }
+  .ho-box.right { border-left: 1px solid rgba(255,255,255,0.06); }
+  .ho-arrow {
+    padding: 0 20px;
+    text-align: center;
+    color: #6B2AEA;
+    font-size: 24px;
+    flex-shrink: 0;
+  }
+  .ho-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #6B2AEA;
+    margin-bottom: 8px;
+  }
+  .ho-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #ededf3;
+    margin-bottom: 10px;
+  }
+  .ho-detail {
+    font-size: 12px;
+    color: #c3c3cc;
+    line-height: 1.6;
+  }
+  .ho-field {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 11px;
+    color: #70707d;
+  }
+  .ho-field code { font-size: 10.5px; }
+
+  /* ── Data structure ── */
+  .json-block {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11.5px;
+    background: #141420;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 8px;
+    padding: 16px 18px;
+    color: #c3c3cc;
+    line-height: 1.8;
+    overflow-x: auto;
+    margin-top: 12px;
+  }
+  .json-key   { color: #A78BFA; }
+  .json-str   { color: #6ee7b7; }
+  .json-arr   { color: #fdba74; }
+  .json-cmt   { color: #3d3d52; font-style: italic; }
+
+  /* ── Interview phases ── */
+  .interview-phases {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .ip-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background: #1e1e2a;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .ip-phase {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 700;
+    color: #6B2AEA;
+    width: 72px;
+    padding-top: 1px;
+  }
+  .ip-content { flex: 1; }
+  .ip-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ededf3;
+    margin-bottom: 3px;
+  }
+  .ip-desc {
+    font-size: 12px;
+    color: #c3c3cc;
+    line-height: 1.5;
+  }
+  .ip-research {
+    font-size: 11px;
+    color: #A78BFA;
+    background: rgba(107,42,234,0.1);
+    border: 1px solid rgba(107,42,234,0.2);
+    border-radius: 5px;
+    padding: 4px 8px;
+    margin-top: 6px;
+    display: inline-block;
+  }
+
+  /* ── Transcript flow ── */
+  .transcript-flow {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .tf-card {
+    background: #1e1e2a;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 16px;
+    position: relative;
+  }
+  .tf-card::after {
+    content: '→';
+    position: absolute;
+    right: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #3d3d52;
+    font-size: 14px;
+    z-index: 1;
+  }
+  .tf-card:last-child::after { display: none; }
+  .tf-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #6B2AEA;
+    margin-bottom: 5px;
+  }
+  .tf-title { font-size: 13px; font-weight: 600; color: #ededf3; margin-bottom: 4px; }
+  .tf-desc  { font-size: 11px; color: #70707d; line-height: 1.5; }
+
+  /* ── Pipeline steps ── */
+  .pipeline {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .ps {
+    flex: 1;
+    min-width: 140px;
+    background: #1e1e2a;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .ps-num {
+    font-size: 22px;
+    font-weight: 700;
+    color: rgba(107,42,234,0.3);
+    margin-bottom: 4px;
+  }
+  .ps-title { font-size: 12px; font-weight: 600; color: #ededf3; margin-bottom: 4px; }
+  .ps-model { font-size: 10px; color: #A78BFA; font-family: monospace; margin-bottom: 5px; }
+  .ps-desc  { font-size: 11px; color: #70707d; line-height: 1.5; }
+
+  /* ── Critical design decisions ── */
+  .decisions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .decision {
+    background: #1e1e2a;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-left: 3px solid #6B2AEA;
+    border-radius: 0 8px 8px 0;
+    padding: 14px 16px;
+  }
+  .d-title { font-size: 13px; font-weight: 600; color: #ededf3; margin-bottom: 4px; }
+  .d-desc  { font-size: 12px; color: #c3c3cc; line-height: 1.55; }
+  .d-why   { font-size: 11px; color: #70707d; margin-top: 5px; }
+
+  /* ── Spacer ── */
+  .spacer { height: 32px; }
+
+  /* Responsive */
+  @media (max-width: 720px) {
+    .cards { grid-template-columns: 1fr; }
+    .handover { grid-template-columns: 1fr; }
+    .ho-arrow { display: none; }
+    .transcript-flow { grid-template-columns: 1fr 1fr; }
+    .tf-card::after { display: none; }
+    .phases { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>OpenAI Architecture — Travel Interview Tool</h1>
+  <p class="subtitle">How the AI pipeline works end-to-end: research → voice interview → article generation</p>
+
+  <!-- ── Phase strip ── -->
+  <div class="phases">
+    <div class="phase active">
+      <div class="phase-num">Phase 1</div>
+      <div class="phase-name">Intake</div>
+      <div class="phase-model">No AI</div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">Phase 2</div>
+      <div class="phase-name">Research</div>
+      <div class="phase-model">gpt-4.1 + web search</div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">Phase 3</div>
+      <div class="phase-name">Voice Interview</div>
+      <div class="phase-model">gpt-4o-realtime</div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">Phase 4</div>
+      <div class="phase-name">Pipeline</div>
+      <div class="phase-model">gpt-4.1 × 4 steps</div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">Phase 5</div>
+      <div class="phase-name">Review</div>
+      <div class="phase-model">Human</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════ RESEARCH BOT ═══════════════════════════════ -->
+  <div class="section-title">Research Bot — How It Works</div>
+
+  <div class="research-flow">
+    <div class="rf-row">
+      <div class="rf-icon purple">📋</div>
+      <div class="rf-content">
+        <div class="rf-label">Trigger</div>
+        <div class="rf-title">Intake form submitted → <code>POST /api/sessions</code></div>
+        <div class="rf-desc">Immediately after the employee submits their trip details, the server fires <code>runDestinationResearch()</code> asynchronously. The session status is set to <strong>researching</strong>. The interview start button stays disabled until this completes.</div>
+      </div>
+    </div>
+
+    <div class="rf-row">
+      <div class="rf-icon blue">🔍</div>
+      <div class="rf-content">
+        <div class="rf-label">API Call — OpenAI Responses API</div>
+        <div class="rf-title">gpt-4.1 + <code>web_search_preview</code> tool</div>
+        <div class="rf-desc">Uses <code>openai.responses.create()</code> — NOT <code>chat.completions.create()</code>. The Responses API is a different endpoint that supports live web tool use. The model autonomously decides when to trigger web searches during its response.</div>
+        <div class="node-code">openai.responses.create({
+  model: 'gpt-4.1',
+  tools: [{ type: 'web_search_preview' }],
+  instructions: 'Focus on Reddit discussions for authentic opinions.',
+  input: buildResearchPrompt(destination, cities, tripType, purpose),
+})</div>
+      </div>
+    </div>
+
+    <div class="rf-row">
+      <div class="rf-icon orange">🌐</div>
+      <div class="rf-content">
+        <div class="rf-label">Web Searches Performed</div>
+        <div class="rf-title">Reddit + travel forums searched automatically</div>
+        <div class="rf-desc">The prompt instructs the model to search for 8 specific query patterns:
+          <br>• "What do people wish they knew before visiting <em>destination</em>?"
+          <br>• "Best food in <em>city</em>" discussions
+          <br>• "<em>destination</em> budget breakdown" threads
+          <br>• "Mistakes I made in <em>destination</em>" posts
+          <br>• Overrated vs underrated takes
+          <br>The model issues multiple web searches and synthesises the results — it never just returns URLs.</div>
+      </div>
+    </div>
+
+    <div class="rf-row">
+      <div class="rf-icon green">📦</div>
+      <div class="rf-content">
+        <div class="rf-label">Output — Structured JSON</div>
+        <div class="rf-title">Saved to <code>research_snapshots</code> table</div>
+        <div class="rf-desc">The model returns a strict JSON object (no markdown wrapping). The schema covers 9 topic buckets, unique destination angles, real Reddit questions people ask, and per-city breakdowns.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Research JSON schema -->
+  <div class="json-block"><span class="json-cmt">// DestinationResearch — what gets stored in research_snapshots.research_data</span>
+{
+  <span class="json-key">"destination"</span>:      <span class="json-str">"Malaysia — Kuala Lumpur, Langkawi"</span>,
+  <span class="json-key">"summary"</span>:          <span class="json-str">"2-3 sentence overview of interview angles"</span>,
+  <span class="json-key">"bucketHints"</span>: {
+    <span class="json-key">"food"</span>:            { <span class="json-key">"hints"</span>: <span class="json-arr">["Must-try nasi lemak variants", "Mamak stalls vs hawker centres"]</span> },
+    <span class="json-key">"logistics"</span>:       { <span class="json-key">"hints"</span>: <span class="json-arr">["Grab vs Myrapido debate", "Langkawi: MUST rent a car"]</span> },
+    <span class="json-key">"budget"</span>:          { <span class="json-key">"hints"</span>: <span class="json-arr">["Budget: $40–60/day, Mid: $100–150/day"]</span> },
+    <span class="json-key">"mistakes"</span>:        { <span class="json-key">"hints"</span>: <span class="json-arr">["Not renting car in Langkawi", "Skipping Batu Caves dress code info"]</span> },
+    <span class="json-key">"disappointments"</span>: { <span class="json-key">"hints"</span>: <span class="json-arr">["Petronas towers: exterior &gt; interior"]</span> },
+    <span class="json-cmt">// + highlights, trip_overview, restaurants, practical_tips</span>
+  },
+  <span class="json-key">"uniqueAngles"</span>:     <span class="json-arr">["KL vs Singapore comparison", "Langkawi as duty-free island"]</span>,
+  <span class="json-key">"redditQuestions"</span>:  <span class="json-arr">["Is Malaysia safe for solo female travel?", "How much cash to bring?"]</span>,
+  <span class="json-key">"cityResearch"</span>: {
+    <span class="json-key">"Kuala Lumpur"</span>:    { <span class="json-key">"food"</span>: <span class="json-arr">[...]</span>, <span class="json-key">"activities"</span>: <span class="json-arr">[...]</span>, <span class="json-key">"tips"</span>: <span class="json-arr">[...]</span> },
+    <span class="json-key">"Langkawi"</span>:         { <span class="json-key">"food"</span>: <span class="json-arr">[...]</span>, <span class="json-key">"activities"</span>: <span class="json-arr">[...]</span>, <span class="json-key">"tips"</span>: <span class="json-arr">[...]</span> }
+  }
+}</div>
+
+  <!-- ═══════════════════════════════ HANDOVER ═══════════════════════════════ -->
+  <div class="section-title">The Research → Interview Handover</div>
+
+  <div class="handover">
+    <div class="ho-box left">
+      <div class="ho-title">Research Phase</div>
+      <div class="ho-name">gpt-4.1 + Web Search</div>
+      <div class="ho-detail">
+        Async job fires after intake. Stores structured JSON in <code>research_snapshots</code>.
+        Session status: <strong>researching → ready</strong>.
+        <br><br>
+        <strong>Interview is locked</strong> until status = <code>ready</code>. The interview page polls <code>/api/sessions/[id]/research</code> every 3 seconds.
+      </div>
+    </div>
+    <div class="ho-arrow">→</div>
+    <div class="ho-box right">
+      <div class="ho-title">Token Creation — The Handover Moment</div>
+      <div class="ho-name"><code>GET /api/sessions/[id]/realtime</code></div>
+      <div class="ho-detail">
+        When the employee clicks <strong>Start Interview</strong>, the browser calls this server route. The server:
+        <div class="ho-field">1. Fetches <code>intake_responses</code> from DB</div>
+        <div class="ho-field">2. Fetches <code>research_snapshots</code> from DB</div>
+        <div class="ho-field">3. Calls <code>buildInterviewInstructions(intake, research)</code></div>
+        <div class="ho-field">4. POSTs to <code>openai.com/v1/realtime/sessions</code> with the instructions <strong>baked in</strong></div>
+        <div class="ho-field">5. Returns an <strong>ephemeral token</strong> to the browser</div>
+        <div class="ho-field">6. Browser connects directly to OpenAI via WebRTC</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <!-- ── Instruction builder ── -->
+  <div class="cards">
+    <div class="card">
+      <div class="card-title">buildInterviewInstructions() <span class="pill">instruction-builder.ts</span></div>
+      <ul class="step-list">
+        <li><div class="step-num">1</div><div><strong>Persona</strong> — <code>buildInterviewerPersona(destination, cities)</code><br>Frames the bot as a colleague who "has been dying to visit" that specific place. Destination-aware, not generic.</div></li>
+        <li><div class="step-num">2</div><div><strong>Intake context</strong> — <code>buildIntakeContext(intake)</code><br>Injects: employee name, trip duration, cities visited, travel purpose, number of travelers, day-by-day itinerary.</div></li>
+        <li><div class="step-num">3</div><div><strong>Itinerary flow</strong> — <code>buildItineraryContext(itinerary)</code><br>The bot gets the day-by-day breakdown so it can ask "so Day 3 you were in Langkawi — what did you do?"</div></li>
+        <li><div class="step-num">4</div><div><strong>Research hints</strong> — <code>buildResearchContext(research)</code><br>All 9 bucket hints + city research + Reddit questions injected here. If research is missing, fallback text used.</div></li>
+        <li><div class="step-num">5</div><div><strong>Topic tracking rules</strong> — <code>buildTopicTrackingInstructions()</code><br>Rules for which topics are mandatory vs optional, and when to move on vs dig deeper.</div></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-title">How research appears in the prompt <span class="pill orange">baked-in context</span></div>
+      <div class="node-code" style="font-size:10.5px; white-space: pre-wrap;">## DESTINATION RESEARCH
+Based on real Reddit discussions and travel forums:
+
+### Food hints (use these to ask sharper questions)
+- "Did you try nasi lemak? There's debate about
+  whether hawker stalls or proper restaurants do
+  it better — what did you find?"
+- "Mamak stalls are supposedly unmissable at 2am
+  — did that happen?"
+
+### Logistics hints
+- "A lot of people say Langkawi is impossible
+  without a rental car — did you rent one?"
+
+### Reddit questions your article should answer
+- "Is Malaysia worth it vs Thailand?"
+- "How much cash should I bring?"
+
+### Kuala Lumpur — city-specific
+- Food: roti canai, char kway teow, cendol
+- Tips: Touch 'n Go card for transport
+- Mistakes: Skipping Chinatown food alley</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════ VOICE INTERVIEW ═══════════════════════════════ -->
+  <div class="section-title">Voice Interview — How It Works in Practice</div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-title">WebRTC Architecture <span class="pill green">No server in audio path</span></div>
+      <ul class="step-list">
+        <li><div class="step-num">1</div><div>Browser fetches ephemeral token from <code>/api/realtime</code> (valid ~60s)</div></li>
+        <li><div class="step-num">2</div><div>Browser opens WebRTC peer connection <strong>directly</strong> to <code>api.openai.com/v1/realtime</code> — audio never touches your server</div></li>
+        <li><div class="step-num">3</div><div>Server VAD (Voice Activity Detection) at OpenAI detects speech automatically — no push-to-talk</div></li>
+        <li><div class="step-num">4</div><div>Two transcript streams:
+          <br>• <strong>Bot speech</strong>: <code>response.audio_transcript.done</code> events
+          <br>• <strong>User speech</strong>: <code>conversation.item.input_audio_transcription.completed</code> events (requires <code>input_audio_transcription: { model: 'gpt-4o-mini-transcribe' }</code>)</div></li>
+        <li><div class="step-num">5</div><div>Browser PATCHes transcript entries to <code>/api/sessions/[id]</code> as they arrive</div></li>
+        <li><div class="step-num">6</div><div>After interview ends, client POSTs to <code>/api/sessions/[id]/process</code> → pipeline triggers</div></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-title">5-Phase Interview Structure <span class="pill">topic-tracker.ts</span></div>
+      <div class="interview-phases" style="margin-top:0;">
+        <div class="ip-row">
+          <div class="ip-phase">Phase 1</div>
+          <div class="ip-content">
+            <div class="ip-title">Trip Overview</div>
+            <div class="ip-desc">Who went, how long, what type of trip. Sets the context. Bot uses intake data — never re-asks what was already collected.</div>
+          </div>
+        </div>
+        <div class="ip-row">
+          <div class="ip-phase">Phase 2</div>
+          <div class="ip-content">
+            <div class="ip-title">Day-by-day walk-through</div>
+            <div class="ip-desc">Bot follows the itinerary structure. Asks about each city in order. Uses city-specific research hints here.</div>
+            <div class="ip-research">Uses cityResearch[city].food, activities, tips from research JSON</div>
+          </div>
+        </div>
+        <div class="ip-row">
+          <div class="ip-phase">Phase 3</div>
+          <div class="ip-content">
+            <div class="ip-title">Cross-cutting themes</div>
+            <div class="ip-desc">Budget totals, biggest mistake, hidden gem, what they'd do differently.</div>
+            <div class="ip-research">Uses bucketHints.budget + bucketHints.mistakes from research JSON</div>
+          </div>
+        </div>
+        <div class="ip-row">
+          <div class="ip-phase">Phase 4</div>
+          <div class="ip-content">
+            <div class="ip-title">Research rapid fire</div>
+            <div class="ip-desc">Bot uses the Reddit questions from research as a rapid-fire round: "People on Reddit constantly ask — <em>is Malaysia worth it vs Thailand?</em> What would you say?"</div>
+            <div class="ip-research">Uses redditQuestions + uniqueAngles from research JSON</div>
+          </div>
+        </div>
+        <div class="ip-row">
+          <div class="ip-phase">Phase 5</div>
+          <div class="ip-content">
+            <div class="ip-title">Close</div>
+            <div class="ip-desc">Final advice, one-sentence summary, who they'd recommend this trip to.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════ POST-INTERVIEW PIPELINE ═══════════════════════════════ -->
+  <div class="section-title">Post-Interview Pipeline — 5 Steps</div>
+
+  <div class="pipeline">
+    <div class="ps">
+      <div class="ps-num">01</div>
+      <div class="ps-title">Clean Transcript</div>
+      <div class="ps-model">gpt-4.1</div>
+      <div class="ps-desc">Polishes raw WebRTC transcript entries into readable dialogue. Fixes filler words, stutters, incomplete sentences.</div>
+    </div>
+    <div class="ps">
+      <div class="ps-num">02</div>
+      <div class="ps-title">Extract Data</div>
+      <div class="ps-model">gpt-4.1</div>
+      <div class="ps-desc">Pulls structured facts (highlights, food, restaurants, budget, per-day breakdown). Every fact must cite a verbatim quote — prevents hallucination.</div>
+    </div>
+    <div class="ps">
+      <div class="ps-num">03</div>
+      <div class="ps-title">Generate Article</div>
+      <div class="ps-model">gpt-4.1</div>
+      <div class="ps-desc">Writes first-person travel article from extracted data. Uses the extracted JSON, not the raw transcript — clean facts only.</div>
+    </div>
+    <div class="ps">
+      <div class="ps-num">04</div>
+      <div class="ps-title">Build Payload</div>
+      <div class="ps-model">Deterministic</div>
+      <div class="ps-desc">Assembles WordPress-ready JSON: title, slug, HTML content, tags, categories, meta description, schema.org data.</div>
+    </div>
+    <div class="ps">
+      <div class="ps-num">05</div>
+      <div class="ps-title">Store</div>
+      <div class="ps-model">Supabase</div>
+      <div class="ps-desc">Versioned article draft + payload saved to DB. Session status → completed. Old versions kept (never deleted).</div>
+    </div>
+  </div>
+
+  <!-- Transcript flow -->
+  <div class="section-title">Transcript → Article Data Flow</div>
+  <div class="transcript-flow">
+    <div class="tf-card">
+      <div class="tf-label">Raw</div>
+      <div class="tf-title">WebRTC Events</div>
+      <div class="tf-desc">Interleaved bot + user utterances, timestamps, potential ordering issues from concurrent PATCHes</div>
+    </div>
+    <div class="tf-card">
+      <div class="tf-label">Step 1</div>
+      <div class="tf-title">Cleaned Dialogue</div>
+      <div class="tf-desc">Readable conversation, filler words removed, speaker labels preserved</div>
+    </div>
+    <div class="tf-card">
+      <div class="tf-label">Step 2</div>
+      <div class="tf-title">Structured Facts</div>
+      <div class="tf-desc">JSON: highlights[], restaurants[], budget{}, dayBreakdown[], every fact has <code>_evidenceLog</code> quote</div>
+    </div>
+    <div class="tf-card">
+      <div class="tf-label">Step 3</div>
+      <div class="tf-title">Article Markdown</div>
+      <div class="tf-desc">First-person narrative, day-by-day sections, practical tips, honest takes — from facts, not transcript</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════ CRITICAL DESIGN DECISIONS ═══════════════════════════════ -->
+  <div class="section-title">Critical Design Decisions</div>
+  <div class="decisions">
+    <div class="decision">
+      <div class="d-title">Research blocks interview start — intentional</div>
+      <div class="d-desc">The "Start Interview" button is disabled until <code>research_snapshots</code> has a row for this session. The interview page polls <code>/api/sessions/[id]/research</code> every 3 seconds. This guarantees the research context is baked into the system prompt from question 1.</div>
+      <div class="d-why">Without this: the interview started in parallel with research, sometimes research wasn't ready, the bot asked generic questions with no destination knowledge.</div>
+    </div>
+    <div class="decision">
+      <div class="d-title"><code>input_audio_transcription: { model: 'gpt-4o-mini-transcribe' }</code> — must not be removed</div>
+      <div class="d-desc">Without this field in the Realtime session config, OpenAI never fires <code>conversation.item.input_audio_transcription.completed</code> events. Only the bot's side of the conversation gets transcribed. The user's entire side is missing.</div>
+      <div class="d-why">Without this: the extraction model saw only bot questions, inferred user answers from context (bot asked "did you try nasi lemak?" → extractor assumed yes). Every fact was hallucinated. This was discovered after multiple failed articles.</div>
+    </div>
+    <div class="decision">
+      <div class="d-title">Evidence log in extraction — anti-hallucination guard</div>
+      <div class="d-desc">Every extracted fact must include <code>_evidenceLog: "exact verbatim quote from interviewee"</code>. The extraction prompt explicitly says: if no quote supports it, the field must be null.</div>
+      <div class="d-why">Without this: bot asking "did you enjoy the spice market?" was treated as evidence the user visited it. The extractor inferred highlights from interviewer questions, not answers.</div>
+    </div>
+    <div class="decision">
+      <div class="d-title">Responses API vs Chat Completions API — different endpoints</div>
+      <div class="d-desc"><code>openai.responses.create()</code> is used for research — NOT <code>openai.chat.completions.create()</code>. Only the Responses API supports <code>web_search_preview</code> tool use. These are different OpenAI endpoints.</div>
+      <div class="d-why">Swapping to chat completions breaks web search entirely — the tool field is silently ignored.</div>
+    </div>
+    <div class="decision">
+      <div class="d-title">No server-side WebRTC — server is not in the audio path</div>
+      <div class="d-desc">The server only creates an ephemeral token. The browser connects directly to OpenAI Realtime via WebRTC. Audio latency is minimised. If the browser tab closes mid-interview, partial transcript is preserved (PATCHed incrementally).</div>
+      <div class="d-why">Server-side audio relay would add ~200–400ms latency. For a 15-min conversation this compounds to a noticeably laggy experience.</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════ MODEL SUMMARY ═══════════════════════════════ -->
+  <div class="section-title">Model Usage Summary</div>
+  <div class="cards">
+    <div class="card">
+      <div class="card-title">Models used</div>
+      <ul class="step-list">
+        <li><div class="step-num" style="width:auto;padding:0 8px;border-radius:4px;font-size:10px;">gpt-4.1</div><div><strong>Research</strong> (Responses API + web_search_preview) + <strong>Transcript cleaning</strong> + <strong>Extraction</strong> + <strong>Article generation</strong></div></li>
+        <li><div class="step-num" style="width:auto;padding:0 8px;border-radius:4px;font-size:10px;">gpt-4o-realtime</div><div><strong>Live voice interview</strong> — handles speech-to-speech in real time. Persona + all context baked into system prompt at token creation time.</div></li>
+        <li><div class="step-num" style="width:auto;padding:0 8px;border-radius:4px;font-size:10px;">gpt-4o-mini-transcribe</div><div><strong>User speech transcription</strong> — runs alongside the Realtime model to capture the interviewee's side of the conversation.</div></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">API surfaces used</div>
+      <ul class="step-list">
+        <li><div class="step-num">A</div><div><strong>Responses API</strong> — <code>openai.responses.create()</code><br>Research only. Supports tool use (web search). Different endpoint from chat completions.</div></li>
+        <li><div class="step-num">B</div><div><strong>Chat Completions API</strong> — <code>openai.chat.completions.create()</code><br>Transcript cleaning, extraction, article generation. Standard text-in text-out.</div></li>
+        <li><div class="step-num">C</div><div><strong>Realtime API (WebRTC)</strong> — <code>openai.com/v1/realtime/sessions</code><br>Token creation on server. WebRTC connection from browser. Audio streamed directly to OpenAI.</div></li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

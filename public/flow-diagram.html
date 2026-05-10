@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel Interview — System Flow</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; padding: 40px; min-height: 100vh; }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; color: #fff; }
+  .subtitle { color: #8b949e; font-size: 14px; margin-bottom: 40px; }
+
+  .flow { display: flex; flex-direction: column; gap: 0; max-width: 1100px; margin: 0 auto; }
+
+  .phase { margin-top: 48px; margin-bottom: 16px; }
+  .phase-label { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; padding: 4px 12px; border-radius: 4px; }
+
+  .node { position: relative; background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px 24px; margin-bottom: 0; }
+  .node-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .node-detail { font-size: 12px; color: #8b949e; line-height: 1.6; }
+  .node-detail code { background: #1c2128; padding: 1px 6px; border-radius: 3px; font-size: 11px; color: #79c0ff; }
+  .node-file { font-size: 10px; color: #484f58; margin-top: 8px; font-family: monospace; }
+
+  .arrow { display: flex; justify-content: center; padding: 4px 0; }
+  .arrow svg { width: 24px; height: 28px; }
+  .arrow path { fill: none; stroke: #30363d; stroke-width: 2; }
+  .arrow polygon { fill: #30363d; }
+
+  .c-blue { border-left: 3px solid #58a6ff; }
+  .c-green { border-left: 3px solid #3fb950; }
+  .c-orange { border-left: 3px solid #f0883e; }
+  .c-purple { border-left: 3px solid #bc8cff; }
+  .c-red { border-left: 3px solid #f85149; }
+  .c-yellow { border-left: 3px solid #d29922; }
+  .c-teal { border-left: 3px solid #39d353; }
+
+  .phase-blue .phase-label { background: #0d1d33; color: #58a6ff; }
+  .phase-green .phase-label { background: #0d2818; color: #3fb950; }
+  .phase-orange .phase-label { background: #2a1a00; color: #f0883e; }
+  .phase-purple .phase-label { background: #1c0d33; color: #bc8cff; }
+  .phase-red .phase-label { background: #2d0f0f; color: #f85149; }
+  .phase-teal .phase-label { background: #0d2d1a; color: #39d353; }
+
+  .agent-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
+  .agent-voice { background: #1c3a1c; color: #3fb950; }
+  .agent-research { background: #2a1a00; color: #f0883e; }
+  .agent-extract { background: #1c0d33; color: #bc8cff; }
+  .agent-article { background: #0d1d33; color: #58a6ff; }
+  .agent-user { background: #2d0f0f; color: #f85149; }
+
+  .data-label { font-size: 10px; color: #6e7681; text-align: center; padding: 2px 0; font-style: italic; }
+
+  .callout { background: #1a1500; border: 1px solid #d29922; border-radius: 8px; padding: 14px 18px; margin: 16px 0; font-size: 12px; color: #d29922; line-height: 1.6; }
+  .callout strong { color: #f0c040; }
+  .callout-green { background: #0d1f0d; border-color: #3fb950; color: #3fb950; }
+  .callout-green strong { color: #56d364; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 32px; padding: 16px 20px; background: #161b22; border-radius: 8px; border: 1px solid #30363d; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8b949e; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  .interview-phases { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+  .interview-phase { background: #1c2128; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; font-size: 11px; line-height: 1.5; flex: 1; min-width: 150px; }
+  .interview-phase strong { color: #e1e4e8; display: block; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+
+<h1>Travel Interview System — Flow Diagram</h1>
+<p class="subtitle">How intake, research, voice interview, extraction, and article generation coordinate · Updated March 2026</p>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div> User action</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div> Backend / API</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0883e"></div> Research agent (GPT-4.1 + web search)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> Voice agent (GPT-4o Realtime)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#bc8cff"></div> Processing agents (GPT-4.1)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div> Data store (Supabase)</div>
+</div>
+
+<div class="flow">
+
+  <!-- PHASE 1: INTAKE -->
+  <div class="phase phase-red"><span class="phase-label">Phase 1 — Intake</span></div>
+
+  <div class="node c-red">
+    <div class="node-title"><span class="agent-badge agent-user">USER</span> Fill intake form (2 steps)</div>
+    <div class="node-detail">
+      <strong>Step 1:</strong> Name, email, country, purpose, duration, travelers<br>
+      <strong>Step 2:</strong> Day-by-day itinerary — map each day to a city + notes<br>
+      Cities auto-extracted from itinerary. Submit triggers session creation.
+    </div>
+    <div class="node-file">intake-form.tsx → POST /api/sessions</div>
+  </div>
+
+  <div class="arrow"><svg viewBox="0 0 24 28"><path d="M12 0 L12 20"/><polygon points="7,18 12,26 17,18"/></svg></div>
+
+  <!-- PHASE 2: SESSION + RESEARCH (SEQUENTIAL) -->
+  <div class="phase phase-orange"><span class="phase-label">Phase 2 — Session Creation + Research (blocks interview)</span></div>
+
+  <div class="node c-blue">
+    <div class="node-title"><span class="agent-badge agent-article">API</span> Create session + save intake</div>
+    <div class="node-detail">
+      Create <code>interview_sessions</code> row → save <code>intake_responses</code> with itinerary<br>
+      Status: <code>intake</code> → <code>researching</code><br>
+      Redirect user to <code>/interview/[sessionId]</code>
+    </div>
+    <div class="node-file">POST /api/sessions → session-manager.ts</div>
+  </div>
+
+  <div class="arrow"><svg viewBox="0 0 24 28"><path d="M12 0 L12 20"/><polygon points="7,18 12,26 17,18"/></svg></div>
+
+  <div class="node c-orange">
+    <div class="node-title"><span class="agent-badge agent-research">RESEARCH AGENT</span> Destination research (runs while user waits)</div>
+    <div class="node-detail">
+      GPT-4.1 + <code>web_search_preview</code> tool<br>
+      Searches Reddit, travel forums for real opinions<br>
+      Returns per-bucket hints + <strong>per-city research</strong> (food, activities, mistakes)<br>
+      + unique angles + Reddit questions travelers ask<br>
+      <br>
+      Saves to <code>research_snapshots</code><br>
+      Status: <code>researching</code> → <code>ready</code><br>
+      <br>
+      <strong>User sees:</strong> spinner + "Researching your destination..." (15-30s)<br>
+      "Start Interview" button is <strong>disabled</strong> until research completes.
+    </div>
+    <div class="node-file">research-service.ts + prompts/research.ts</div>
+  </div>
+
+  <div class="callout-green callout">
+    <strong>Why research-first?</strong> Research is baked directly into the voice agent's system prompt at session creation. This means every research-driven question (Reddit Qs, local food, common mistakes) is available from the very first question. No mid-session injection needed.
+  </div>
+
+  <div class="arrow"><svg viewBox="0 0 24 28"><path d="M12 0 L12 20"/><polygon points="7,18 12,26 17,18"/></svg></div>
+
+  <!-- PHASE 3: INTERVIEW -->
+  <div class="phase phase-green"><span class="phase-label">Phase 3 — Voice Interview (5 phases)</span></div>
+
+  <div class="node c-blue">
+    <div class="node-title"><span class="agent-badge agent-article">API</span> Create realtime session (research already baked in)</div>
+    <div class="node-detail">
+      Builds system instructions from:<br>
+      1. <strong>Destination-aware persona</strong> — "You're dying to visit {destination}, pump them for trip intel"<br>
+      2. Intake context — what we already know (don't re-ask)<br>
+      3. Itinerary context — day-by-day interview flow plan<br>
+      4. <strong>Research context — ALWAYS included</strong> (per-city food, activities, Reddit Qs, unique angles)<br>
+      5. Topic tracking rules — anti-repetition, mandatory topics<br>
+      <br>
+      Session config includes <code>input_audio_transcription: { model: "gpt-4o-mini-transcribe" }</code><br>
+      POSTs to OpenAI Realtime Sessions API → returns ephemeral key<br>
+      Status: <code>ready</code> → <code>interviewing</code>
+    </div>
+    <div class="node-file">GET /api/sessions/[id]/realtime → instruction-builder.ts</div>
+  </div>
+
+  <div class="arrow"><svg viewBox="0 0 24 28"><path d="M12 0 L12 20"/><polygon points="7,18 12,26 17,18"/></svg></div>
+
+  <div class="node c-green">
+    <div class="node-title"><span class="agent-badge agent-voice">VOICE AGENT</span> Live interview via WebRTC</div>
+    <div class="node-detail">
+      <strong>Connection:</strong> Browser ↔ OpenAI Realtime API via WebRTC (SDP offer/answer)<br>
+      <strong>Audio in:</strong> User's mic → WebRTC track → OpenAI<br>
+      <strong>Audio out:</strong> OpenAI → WebRTC track → browser <code>&lt;audio&gt;</code> element<br>
+      <strong>Data channel:</strong> JSON events for transcript + control<br>
+      <br>
+      <strong>Transcript capture (both sides):</strong><br>
+      • <code>response.audio_transcript.done</code> → interviewer (bot) text<br>
+      • <code>conversation.item.input_audio_transcription.completed</code> → interviewee (user) text<br>
+      <br>
+      <strong>Mic mute:</strong> <code>stream.getAudioTracks()[0].enabled = false</code> — bot waits
+    </div>
+    <div class="node-file">interview-panel.tsx (WebRTC setup)</div>
+  </div>
+
+  <!-- Interview phases breakdown -->
+  <div style="margin: 16px 0;">
+    <div style="font-size: 11px; color: #6e7681; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; font-weight: 600;">Interview flow (5 phases)</div>
+    <div class="interview-phases">
+      <div class="interview-phase">
+        <strong>Phase 1: Overview</strong>
+        2-3 min. How the trip came about, general vibe.
+      </div>
+      <div class="interview-phase">
+        <strong>Phase 2: Day-by-day</strong>
+        Walk through each city block. Per day: highlights, food, issues.
+      </div>
+      <div class="interview-phase">
+        <strong>Phase 3: Cross-cutting</strong>
+        Best restaurant, budget breakdown, what they'd change, who it's for, tips.
+      </div>
+      <div class="interview-phase">
+        <strong>Phase 4: Research rapid fire</strong>
+        "We researched popular questions about {destination} — quick fire round!" 3-5 research-driven Qs from Reddit/web.
+      </div>
+      <div class="interview-phase">
+        <strong>Phase 5: Close</strong>
+        "One thing you'd tell someone planning this trip?" Thank and end.
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>🎤 Critical fix (March 2026):</strong> <code>input_audio_transcription</code> must be enabled in the session config. Without it, the Realtime API never generates text for user speech — the bot hears the audio but no transcription events fire. This caused transcripts to contain only bot messages, leading to hallucinated extractions.
+  </div>
+
+  <div class="arrow"><svg viewBox="0 0 24 28"><path d="M12 0 L12 20"/><polygon points="7,18 12,26 17,18"/></svg></div>
+
+  <div class="node c-red">
+    <div class="node-title"><span class="agent-badge agent-user">USER</span> Ends interview</div>
+    <div class="node-detail">
+      Closes WebRTC + data channel. Stops mic stream.<br>
+      Sends all transcript entries (both bot AND user) + duration via <code>PATCH /api/sessions/[id]</code><br>
+      Saves to <code>transcripts.raw_entries</code><br>
+      Status: → <code>processing</code>
+    </div>
+    <div class="node-file">interview-panel.tsx → PATCH /api/sessions/[id]</div>
+  </div>
+
+  <div class="arrow"><svg viewBox="0 0 24 28"><path d="M12 0 L12 20"/><polygon points="7,18 12,26 17,18"/></svg></div>
+
+  <!-- PHASE 4: PROCESSING PIPELINE -->
+  <div class="phase phase-purple"><span class="phase-label">Phase 4 — Post-Processing Pipeline</span></div>
+
+  <div class="node c-red">
+    <div class="node-title"><span class="agent-badge agent-user">USER</span> Clicks "Generate Article"</div>
+    <div class="node-detail">Triggers <code>POST /api/sessions/[id]/process</code> → runs 4-step pipeline</div>
+  </div>
+
+  <div class="arrow"><svg viewBox="0 0 24 28"><path d="M12 0 L12 20"/><polygon points="7,18 12,26 17,18"/></svg></div>
+
+  <div class="node c-purple">
+    <div class="node-title"><span class="agent-badge agent-extract">STEP 1</span> Transcript cleanup</div>
+    <div class="node-detail">
+      GPT-4.1 · temp 0.3<br>
+      Fix speech-to-text errors, remove filler words, fix punctuation<br>
+      Preserve exact details (names, prices, dishes)<br>
+      Mark unclear sections with <code>[unclear]</code><br>
+      Saves cleaned text to <code>transcripts.cleaned_text</code>
+    </div>
+    <div class="node-file">transcript-cleaner.ts + prompts/transcript-cleanup.ts</div>
+  </div>
+
+  <div class="arrow"><svg viewBox="0 0 24 28"><path d="M12 0 L12 20"/><polygon points="7,18 12,26 17,18"/></svg></div>
+
+  <div class="node c-purple">
+    <div class="node-title"><span class="agent-badge agent-extract">STEP 2</span> Structured extraction (with evidence log)</div>
+    <div class="node-detail">
+      GPT-4.1 · temp 0.2 · JSON mode<br>
+      <strong>Two-pass approach:</strong> find interviewee quotes first, then extract from quotes only<br>
+      <br>
+      <strong>Critical rule: Interviewer questions ≠ facts</strong><br>
+      If bot asks "Did you try the shuwa?" and user says "no" → shuwa is NOT extracted<br>
+      Only the <strong>interviewee's confirmed statements</strong> become data<br>
+      <br>
+      <strong>Evidence log (<code>_evidenceLog</code>):</strong> every extracted fact must cite a direct transcript quote<br>
+      If no quote exists → fact is not included<br>
+      <br>
+      Outputs: highlights, food, restaurants, budget, per-day breakdown, suggested articles<br>
+      All budget fields nullable — null means "not mentioned"
+    </div>
+    <div class="node-file">extractor.ts + prompts/extraction.ts</div>
+  </div>
+
+  <div class="callout">
+    <strong>🔍 Research leak prevention:</strong> The extraction model receives ONLY the cleaned transcript — it does NOT receive research data. Research-informed questions asked by the bot appear in the transcript, but the extraction prompt explicitly instructs: "Interviewer questions are NOT facts — only extract what the interviewee confirmed." The evidence log ensures every fact is traceable to a user quote.
+  </div>
+
+  <div class="arrow"><svg viewBox="0 0 24 28"><path d="M12 0 L12 20"/><polygon points="7,18 12,26 17,18"/></svg></div>
+
+  <div class="node c-purple">
+    <div class="node-title"><span class="agent-badge agent-extract">STEP 3</span> Article generation</div>
+    <div class="node-detail">
+      GPT-4.1 · temp 0.7 · 1200-2000 words markdown<br>
+      First-person voice ("I" / "we"). Cross-checks against evidence log.<br>
+      Sections: intro, highlights, loved, disappointments, food, logistics, budget, who it's for, tips<br>
+      <strong>Skips sections with no real data</strong> — honest gaps beat fabrication<br>
+      No AI-speak ("hidden gem", "feast for the senses", "nestled in")
+    </div>
+    <div class="node-file">article-generator.ts + prompts/article.ts</div>
+  </div>
+
+  <div class="arrow"><svg viewBox="0 0 24 28"><path d="M12 0 L12 20"/><polygon points="7,18 12,26 17,18"/></svg></div>
+
+  <div class="node c-purple">
+    <div class="node-title"><span class="agent-badge agent-extract">STEP 4</span> WordPress payload builder</div>
+    <div class="node-detail">
+      Converts markdown → HTML, generates title, slug, excerpt, categories, tags<br>
+      Stores as <code>WordPressPayload</code> — ready to publish but NOT sent anywhere yet<br>
+      Status: → <code>completed</code>
+    </div>
+    <div class="node-file">payload-builder.ts</div>
+  </div>
+
+  <div class="arrow"><svg viewBox="0 0 24 28"><path d="M12 0 L12 20"/><polygon points="7,18 12,26 17,18"/></svg></div>
+
+  <!-- PHASE 5: REVIEW -->
+  <div class="phase phase-teal"><span class="phase-label">Phase 5 — Review</span></div>
+
+  <div class="node c-teal">
+    <div class="node-title"><span class="agent-badge agent-user">USER</span> Review page — 6 tabs</div>
+    <div class="node-detail">
+      <strong>Overview:</strong> session metadata, intake summary<br>
+      <strong>Transcript:</strong> raw entries (timestamped, both bot + user) + cleaned text<br>
+      <strong>Research:</strong> full research JSON with per-city data<br>
+      <strong>Extraction:</strong> structured data + evidence log — verify every fact is sourced<br>
+      <strong>Article:</strong> full markdown article (copy button)<br>
+      <strong>Payload:</strong> WordPress-ready JSON (stored, not sent)
+    </div>
+    <div class="node-file">/review/[sessionId] → review-panel.tsx</div>
+  </div>
+
+  <!-- DATA FLOW SUMMARY -->
+  <div style="margin-top: 48px; padding: 24px; background: #161b22; border: 1px solid #30363d; border-radius: 12px;">
+    <h3 style="font-size: 14px; color: #fff; margin-bottom: 16px;">📊 Data Flow Summary</h3>
+    <pre style="font-size: 11px; color: #8b949e; line-height: 2; overflow-x: auto;">
+<span style="color:#f85149">User fills form</span>
+    │
+    ├──→ <span style="color:#d29922">intake_responses</span> (name, email, country, itinerary, cities)
+    │
+    ├──→ <span style="color:#f0883e">Research Agent</span> ──→ <span style="color:#d29922">research_snapshots</span> (bucket hints, city research, reddit Qs)
+    │         │
+    │         └──→ <span style="color:#f85149">User waits</span> (spinner, "Start Interview" blocked)
+    │
+    │   <span style="color:#3fb950">Research completes → "Start Interview" enabled</span>
+    │
+    ├──→ <span style="color:#3fb950">Voice Agent</span> system prompt = persona + intake + itinerary + <span style="color:#f0883e">research</span> + topic rules
+    │         │
+    │         │  <span style="color:#3fb950">Interview: overview → day-by-day → cross-cutting → research rapid fire → close</span>
+    │         │
+    │         │  Transcribes BOTH sides via <span style="color:#79c0ff">input_audio_transcription</span>
+    │         │
+    │         └──→ <span style="color:#d29922">transcripts.raw_entries</span> (bot + user text)
+    │
+    └──→ <span style="color:#bc8cff">Processing Pipeline</span>
+              │
+              ├── Step 1: Clean transcript ──→ <span style="color:#d29922">transcripts.cleaned_text</span>
+              ├── Step 2: Extract data ──→ <span style="color:#d29922">article_drafts.extraction_data</span> + <span style="color:#d29922">_evidenceLog</span>
+              ├── Step 3: Generate article ──→ <span style="color:#d29922">article_drafts.content</span>
+              └── Step 4: Build payload ──→ <span style="color:#d29922">output_payloads.payload</span>
+    </pre>
+  </div>
+
+  <!-- AGENT COORDINATION -->
+  <div style="margin-top: 24px; padding: 24px; background: #161b22; border: 1px solid #30363d; border-radius: 12px;">
+    <h3 style="font-size: 14px; color: #fff; margin-bottom: 16px;">🤖 Agent Coordination</h3>
+    <pre style="font-size: 11px; color: #8b949e; line-height: 2; overflow-x: auto;">
+<span style="color:#f0883e">Research Agent</span> (GPT-4.1 + web search)
+    │
+    │  Runs BEFORE interview starts (user waits 15-30s)
+    │  Output: structured research with per-city hints, Reddit Qs
+    │
+    │  <span style="color:#3fb950">Research MUST complete before interview can begin</span>
+    │
+    └──→ Baked into <span style="color:#3fb950">Voice Agent</span> system prompt (always available from Q1)
+              │
+              ▼
+<span style="color:#3fb950">Voice Agent</span> (GPT-4o Realtime, WebRTC)
+    │
+    │  Persona: "I'm planning my own trip to {destination}"
+    │  Walks through itinerary day-by-day
+    │  Uses research to ask sharper questions throughout
+    │  Phase 4: Research rapid fire — Reddit Qs the user can answer
+    │
+    │  <span style="color:#56d364">Transcribes BOTH bot and user speech</span> (gpt-4o-mini-transcribe)
+    │  Output: raw transcript entries (interviewer + interviewee)
+    │
+    ▼
+<span style="color:#bc8cff">Processing Agents</span> (GPT-4.1, sequential pipeline)
+    │
+    ├── <span style="color:#bc8cff">Transcript Cleaner</span>: fix speech errors, keep details
+    │
+    ├── <span style="color:#bc8cff">Extractor</span>: ONLY extracts interviewee's confirmed statements
+    │         Two-pass: find quotes first, then extract from quotes
+    │         Evidence log required — no quote = no extraction
+    │         <span style="color:#f85149">DOES NOT receive research data (prevents contamination)</span>
+    │
+    ├── <span style="color:#bc8cff">Article Writer</span>: first-person article from extracted data
+    │         Cross-checks against evidence log
+    │         Skips sections with no data
+    │
+    └── <span style="color:#bc8cff">Payload Builder</span>: WordPress-ready JSON (not sent yet)
+    </pre>
+  </div>
+
+</div>
+</body>
+</html>

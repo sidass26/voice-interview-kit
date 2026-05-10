@@ -1,0 +1,41 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@config "../../tailwind.config.js";
+
+/* ── Light mode (default) — clean Headout-branded light theme ── */
+:root {
+  --background: #f8f8fc;
+  --foreground: #111118;
+  --card: #ffffff;
+  --card-foreground: #111118;
+  --muted: #f0f0f6;
+  --muted-foreground: #70707d;
+  --border: rgba(0,0,0,0.08);
+  --input: #ffffff;
+  --primary: #6B2AEA;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f6;
+  --secondary-foreground: #111118;
+  --ring: rgba(107,42,234,0.3);
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --accent: #f0f0f6;
+  --accent-foreground: #111118;
+  --popover: #ffffff;
+  --popover-foreground: #111118;
+}
+
+/* Dark mode CSS variables are injected via layout.tsx <style> to avoid Tailwind stripping them */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}

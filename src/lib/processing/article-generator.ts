@@ -1,23 +1,31 @@
 import { getOpenAI } from '../openai-client';
-import { buildArticlePrompt } from '../prompts/article';
-import type { ExtractedData, IntakeResponse } from '../types';
+import { getConfig } from '../config/index';
+import type { InterviewContext } from '../config/types';
 
 /**
- * Generates a first-person travel article from extracted data and transcript.
+ * Generates the primary output artifact (e.g. a travel article) from
+ * extracted data and the cleaned transcript.
+ *
+ * Uses config.outputs[0] — the first (primary) output definition.
+ * Model and prompt both come from config, making this function domain-agnostic.
  */
 export async function generateArticle(
-  extracted: ExtractedData,
+  extracted: Record<string, unknown>,
   cleanedTranscript: string,
-  intake: IntakeResponse
+  ctx: InterviewContext,
 ): Promise<string> {
-  const prompt = buildArticlePrompt(extracted, cleanedTranscript, intake);
+  const cfg = getConfig();
+  const output = cfg.outputs[0];
+
+  const prompt = output.promptBuilder(extracted, cleanedTranscript, ctx);
+  const model  = output.model ?? 'gpt-4.1';
 
   const response = await getOpenAI().chat.completions.create({
-    model: 'gpt-4.1',
-    messages: [{ role: 'user', content: prompt }],
+    model,
+    messages:   [{ role: 'user', content: prompt }],
     temperature: 0.7,
-    max_tokens: 4000,
+    max_tokens:  4000,
   });
 
-  return response.choices[0]?.message?.content || '';
+  return response.choices[0]?.message?.content ?? '';
 }

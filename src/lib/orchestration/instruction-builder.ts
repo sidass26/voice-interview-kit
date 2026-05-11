@@ -1,36 +1,41 @@
 import type { IntakeResponse, DestinationResearch } from '../types';
 import {
-  buildInterviewerPersona,
   buildIntakeContext,
   buildResearchContext,
   buildItineraryContext,
 } from '../prompts/interviewer';
 import { buildTopicTrackingInstructions } from './topic-tracker';
+import { getConfig } from '../config/index';
+import { buildContext } from '../config/context';
 
 /**
  * Builds the complete system instructions for the Realtime API session.
- * Combines: destination-aware persona + intake context + itinerary flow + research hints + topic tracking rules.
+ *
+ * Section order:
+ *   1. Persona        — from config.interview.personaBuilder (domain-specific voice + motivation)
+ *   2. Intake context — who is being interviewed and what we already know
+ *   3. Itinerary flow — day-by-day guide for the interview (travel-specific, Phase C will generalize)
+ *   4. Research hints — community-sourced questions baked in pre-interview
+ *   5. Topic tracker  — coverage rules enforced by the engine
  */
 export function buildInterviewInstructions(
   intake: IntakeResponse,
-  research: DestinationResearch | null
+  research: DestinationResearch | null,
 ): string {
+  const cfg = getConfig();
+  const ctx = buildContext(intake, research);
+
   const sections: string[] = [
-    buildInterviewerPersona(intake.destination_country, intake.destination_cities),
+    cfg.interview.personaBuilder(ctx),
     buildIntakeContext(intake),
     buildItineraryContext(intake.itinerary || []),
   ];
 
-  if (research) {
-    sections.push(buildResearchContext(research));
-  } else {
-    sections.push(`
-## RESEARCH NOTE
-Background research on this destination is not yet available.
-Use your general knowledge to ask destination-specific questions.
-Focus on getting concrete details from the interviewee.
-`);
-  }
+  sections.push(
+    research
+      ? buildResearchContext(research)
+      : `## RESEARCH NOTE\nBackground research is not yet available. Use your general knowledge to ask specific questions.\n`,
+  );
 
   sections.push(buildTopicTrackingInstructions());
 

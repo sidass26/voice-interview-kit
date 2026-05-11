@@ -5,6 +5,7 @@ import {
   updateSessionStatus,
 } from '@/lib/orchestration/session-manager';
 import { buildInterviewInstructions } from '@/lib/orchestration/instruction-builder';
+import { getConfig } from '@/lib/config/index';
 import type { DestinationResearch } from '@/lib/types';
 
 // GET: Create an ephemeral token for the Realtime API with baked-in instructions
@@ -27,8 +28,8 @@ export async function GET(
 
     const research = researchSnapshot?.research_data as DestinationResearch | null;
 
-    // Build dynamic instructions
     const instructions = buildInterviewInstructions(intake, research ?? null);
+    const { realtimeModel, voice, transcriptionModel } = getConfig().interview;
 
     // Request ephemeral token from OpenAI
     const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
@@ -38,11 +39,11 @@ export async function GET(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-realtime-preview',
-        voice: 'ash',
+        model: realtimeModel,
+        voice,
         instructions,
         input_audio_transcription: {
-          model: 'gpt-4o-mini-transcribe',
+          model: transcriptionModel, // CRITICAL — see CLAUDE.md Decision #1
         },
         turn_detection: {
           type: 'server_vad',

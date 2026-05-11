@@ -7,6 +7,7 @@ import {
   getIntake,
 } from '@/lib/orchestration/session-manager';
 import { runDestinationResearch } from '@/lib/research/research-service';
+import { getConfig } from '@/lib/config/index';
 import { saveResearch } from '@/lib/orchestration/session-manager';
 import type { IntakeFormData } from '@/lib/types';
 
@@ -24,26 +25,24 @@ export async function POST(request: NextRequest) {
     // Update status to researching
     await updateSessionStatus(session.id, 'researching');
 
-    // Trigger research in background (don't await — it'll complete async)
-    // Extract unique cities from itinerary if available, otherwise use destination_cities
-    const cities = body.destination_cities;
-    const destination = `${body.destination_country} — ${cities.join(', ')}`;
-    runDestinationResearch(
-      body.destination_country,
-      cities,
-      body.trip_type,
-      body.trip_purpose
-    )
-      .then(async (research) => {
-        await saveResearch(session.id, destination, research as unknown as Record<string, unknown>);
-        await updateSessionStatus(session.id, 'ready');
-        console.log(`[Research] Completed for session ${session.id}`);
-      })
-      .catch(async (err) => {
-        console.error(`[Research] Failed for session ${session.id}:`, err);
-        // Still mark as ready — interview can proceed without research
-        await updateSessionStatus(session.id, 'ready');
-      });
+    // Trigger research in background — don't await, fires async.
+    const cfg = getConfig();
+    if (cfg.research?.enabled) {
+      const destination = `${body.destination_country} — ${body.destination_cities.join(', ')}`;
+      runDestinationResearch(body)
+        .then(async (research) => {
+          await saveResearch(session.id, destination, research as Record<string, unknown>);
+          await updateSessionStatus(session.id, 'ready');
+          console.log(`[Research] Completed for session ${session.id}`);
+        })
+        .catch(async (err) => {
+          console.error(`[Research] Failed for session ${session.id}:`, err);
+          await updateSessionStatus(session.id, 'ready');
+        });
+    } else {
+      // No research phase — go straight to ready.
+      await updateSessionStatus(session.id, 'ready');
+    }
 
     return NextResponse.json({ sessionId: session.id }, { status: 201 });
   } catch (error) {

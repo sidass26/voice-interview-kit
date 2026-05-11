@@ -1,16 +1,17 @@
 import { getOpenAI } from '../openai-client';
-import { buildExtractionPrompt } from '../prompts/extraction';
-import type { ExtractedData } from '../types';
+import { getConfig } from '../config/index';
+import type { InterviewContext } from '../config/types';
 
 /**
- * Extracts structured data from a cleaned transcript.
+ * Extracts structured facts from a cleaned transcript.
+ * Prompt is built by config.extraction.promptBuilder.
  */
 export async function extractStructuredData(
   cleanedTranscript: string,
-  destination: string,
-  cities: string[]
-): Promise<ExtractedData> {
-  const prompt = buildExtractionPrompt(cleanedTranscript, destination, cities);
+  ctx: InterviewContext,
+): Promise<Record<string, unknown>> {
+  const cfg = getConfig();
+  const prompt = cfg.extraction.promptBuilder(cleanedTranscript, ctx);
 
   const response = await getOpenAI().chat.completions.create({
     model: 'gpt-4.1',
@@ -19,6 +20,6 @@ export async function extractStructuredData(
     response_format: { type: 'json_object' },
   });
 
-  const rawText = response.choices[0]?.message?.content || '{}';
-  return JSON.parse(rawText) as ExtractedData;
+  const rawText = response.choices[0]?.message?.content ?? '{}';
+  return JSON.parse(rawText) as Record<string, unknown>;
 }

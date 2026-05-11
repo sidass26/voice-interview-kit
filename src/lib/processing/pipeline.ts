@@ -1,6 +1,7 @@
 import {
   getIntake,
   getTranscript,
+  getResearch,
   updateTranscriptCleanedText,
   saveArticleDraft,
   saveOutputPayload,
@@ -11,98 +12,86 @@ import { extractStructuredData } from './extractor';
 import { generateArticle } from './article-generator';
 import { buildWordPressPayload } from './payload-builder';
 import { curateImages } from './image-curator';
+import { buildContext } from '../config/context';
+import type { ExtractedData, ImagePlacement } from '../types';
 
 export interface PipelineOptions {
-  // Skip to a later step (used when re-running after image upload on a completed session)
+  // Skip to a later step (used when re-running after image upload)
   skipTo?: 'image_curation';
-  // Pre-supply already-extracted data when skipping early steps
+  // Pre-supply already-generated data when skipping early steps
   existingArticle?: string;
-  existingExtracted?: import('../types').ExtractedData;
+  existingExtracted?: ExtractedData;
 }
 
 export async function runProcessingPipeline(
   sessionId: string,
-  options: PipelineOptions = {}
+  options: PipelineOptions = {},
 ): Promise<void> {
   try {
     await updateSessionStatus(sessionId, 'processing');
 
-    const [intake, transcript] = await Promise.all([
+    const [intake, transcript, researchSnapshot] = await Promise.all([
       getIntake(sessionId),
       getTranscript(sessionId),
+      getResearch(sessionId),
     ]);
 
     if (!intake) throw new Error('No intake data found for session');
 
+    const ctx = buildContext(intake, researchSnapshot?.research_data ?? null);
+
     let cleanedText: string;
-    let extracted: import('../types').ExtractedData;
+    let extracted: Record<string, unknown>;
     let article: string;
 
     if (options.skipTo === 'image_curation') {
-      // Resume from image curation — reuse already-generated article + extraction
       if (!options.existingArticle || !options.existingExtracted) {
         throw new Error('existingArticle and existingExtracted required when skipTo=image_curation');
       }
       cleanedText = transcript?.cleaned_text ?? '';
-      extracted = options.existingExtracted;
-      article = options.existingArticle;
+      extracted   = options.existingExtracted as unknown as Record<string, unknown>;
+      article     = options.existingArticle;
     } else {
       if (!transcript || transcript.raw_entries.length === 0) {
         throw new Error('No transcript data found for session');
       }
 
-      // Step 1: Clean transcript
       console.log(`[Pipeline ${sessionId}] Cleaning transcript...`);
       cleanedText = await cleanTranscript(transcript.raw_entries);
       await updateTranscriptCleanedText(sessionId, cleanedText);
 
-      // Step 2: Extract structured data
       console.log(`[Pipeline ${sessionId}] Extracting structured data...`);
-      extracted = await extractStructuredData(
-        cleanedText,
-        intake.destination_country,
-        intake.destination_cities
-      );
+      extracted = await extractStructuredData(cleanedText, ctx);
 
-      // Step 3: Generate article
       console.log(`[Pipeline ${sessionId}] Generating article...`);
-      article = await generateArticle(extracted, cleanedText, intake);
+      article = await generateArticle(extracted, cleanedText, ctx);
     }
 
-    // Step 3.5: Curate images (if any uploaded)
+    // Image curation (if photos were uploaded)
     let featuredImageUrl: string | null = null;
-    let imagePlacements: import('../types').ImagePlacement[] = [];
+    let imagePlacements: ImagePlacement[] = [];
 
-    if (intake.images && intake.images.length > 0) {
+    if (intake.images?.length > 0) {
       console.log(`[Pipeline ${sessionId}] Curating ${intake.images.length} images...`);
-      const curation = await curateImages(
-        intake.images,
-        article,
-        intake.destination_country
-      );
+      const curation = await curateImages(intake.images, article, intake.destination_country);
       featuredImageUrl = curation.featuredImageUrl;
-      imagePlacements = curation.placements;
+      imagePlacements  = curation.placements;
     }
 
-    // Step 4: Build WordPress payload
-    console.log(`[Pipeline ${sessionId}] Building WordPress payload...`);
+    // Build connector payload (WordPress-shaped for now; Phase F will route through connectors)
+    console.log(`[Pipeline ${sessionId}] Building output payload...`);
     const payload = buildWordPressPayload(
       article,
-      extracted,
+      extracted as unknown as ExtractedData,
       intake,
       imagePlacements,
-      featuredImageUrl
+      featuredImageUrl,
     );
 
-    // Step 5: Store everything
     console.log(`[Pipeline ${sessionId}] Saving outputs...`);
     await Promise.all([
-      saveArticleDraft(sessionId, article, extracted),
-      saveOutputPayload(sessionId, payload, {
-        slug: payload.slug,
-        featuredImageUrl,
-        imagePlacements,
-      }),
+      saveArticleDraft(sessionId, article, extracted as unknown as ExtractedData),
+      saveOutputPayload(sessionId, payload, { slug: payload.slug, featuredImageUrl, imagePlacements }),
     ]);
 
     await updateSessionStatus(sessionId, 'completed', {

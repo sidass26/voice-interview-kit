@@ -1,41 +1,46 @@
 import { getOpenAI } from '../openai-client';
-import { buildResearchPrompt } from '../prompts/research';
-import type { DestinationResearch } from '../types';
+import { getConfig } from '../config/index';
+import { buildContext } from '../config/context';
+import type { IntakeFormData } from '../types';
 
 /**
- * Runs destination research using OpenAI with web search capabilities.
- * Searches Reddit and travel forums for real traveler discussions.
+ * Runs pre-interview research using OpenAI with web search.
+ * Prompt and system instructions come from config.research.
  */
-export async function runDestinationResearch(
-  destination: string,
-  cities: string[],
-  tripType: string,
-  purpose: string
-): Promise<DestinationResearch> {
-  const prompt = buildResearchPrompt(destination, cities, tripType, purpose);
+export async function runDestinationResearch(intake: IntakeFormData): Promise<unknown> {
+  const cfg = getConfig();
+  if (!cfg.research?.enabled) return null;
+
+  // Build a minimal context from the intake form data.
+  // Research runs before the session's IntakeResponse row is fully hydrated,
+  // so we construct context from the raw form body.
+  const ctx = buildContext(
+    intake as unknown as import('../types').IntakeResponse,
+    null,
+  );
+
+  const prompt = cfg.research.promptBuilder(ctx);
+  const systemInstructions =
+    cfg.research.systemInstructions ??
+    'You are a research assistant. Always search the web for real, current information about the topic.';
 
   const response = await getOpenAI().responses.create({
     model: 'gpt-4.1',
-    instructions: 'You are a travel research assistant. Always search the web for real, current information. Focus especially on Reddit discussions for authentic traveler opinions.',
+    instructions: systemInstructions,
     input: prompt,
     tools: [{ type: 'web_search_preview' }],
   });
 
-  // Extract the text output from the response
+  // Extract text output from the Responses API format.
   let rawText = '';
   for (const item of response.output) {
     if (item.type === 'message' && item.content) {
       for (const block of item.content) {
-        if (block.type === 'output_text') {
-          rawText += block.text;
-        }
+        if (block.type === 'output_text') rawText += block.text;
       }
     }
   }
 
-  // Parse the JSON response
-  const cleanedText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  const research: DestinationResearch = JSON.parse(cleanedText);
-
-  return research;
+  const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  return JSON.parse(cleaned);
 }

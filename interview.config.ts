@@ -35,6 +35,38 @@ import { buildArticlePrompt } from './src/lib/prompts/article';
 import type { IntakeResponse, ExtractedData } from './src/lib/types';
 
 // ---------------------------------------------------------------------------
+// Static data (no runtime dependency — defined once, referenced in config)
+// ---------------------------------------------------------------------------
+
+const TRAVEL_PHASES = [
+  {
+    id: 'overview',
+    label: 'Overview',
+    instruction: 'Start with trip context — how the trip came about, general vibe, initial impressions. 2-3 minutes max.',
+  },
+  {
+    id: 'day_by_day',
+    label: 'Day by day',
+    instruction: 'Walk through each city block from the itinerary in order. For each city, ask what they did, where they ate, and what stood out. Use the CITY-SPECIFIC PROBES from the research context.',
+  },
+  {
+    id: 'themes',
+    label: 'Cross-cutting themes',
+    instruction: 'Cover any mandatory topics not yet addressed: budget, negatives/disappointments, logistics, specific restaurant recs.',
+  },
+  {
+    id: 'rapid_fire',
+    label: 'Research rapid fire',
+    instruction: 'Transition with: "We did some research before this — quick fire round, give me short answers." Then ask every MANDATORY PHASE 4 QUESTION from the research context, one at a time.',
+  },
+  {
+    id: 'close',
+    label: 'Close',
+    instruction: '"That\'s super helpful — thanks! One last thing — if someone at your company was planning the same trip, what\'s the one thing you\'d tell them?" Thank them and end.',
+  },
+] as const satisfies import('./src/lib/config/types').InterviewPhase[];
+
+// ---------------------------------------------------------------------------
 
 export const config: InterviewConfig = {
 
@@ -154,53 +186,16 @@ export const config: InterviewConfig = {
   },
 
   // ── Research ──────────────────────────────────────────────────────────────
-  // Pre-interview AI web search. Runs async after intake submission.
-  // Results are baked into the voice bot's system prompt before the interview
-  // starts, giving it specific community-sourced questions to ask.
-  //
-  // CRITICAL: blocksInterviewStart must stay true — if the interview starts
-  // without research, the bot asks generic questions and output quality drops
-  // significantly. See CLAUDE.md Critical Decision #2.
   research: {
     enabled: true,
     blocksInterviewStart: true,
     systemInstructions:
       'You are a travel research assistant. Always search the web for real, current information. Focus especially on Reddit discussions for authentic traveler opinions.',
     promptBuilder: (ctx: InterviewContext): string => {
-      const intake = ctx.intake as Record<string, string>;
-      return buildResearchPrompt(
-        intake.destination_country,
-        ctx.uniqueValues.cities ?? [],
-        intake.trip_type,
-        intake.trip_purpose,
-      );
-    },
-    // Mirrors the DestinationResearch interface in src/lib/types.ts.
-    // Used by the engine to validate the model's JSON response at runtime.
-    responseSchema: {
-      destination: 'string',
-      summary: 'string',
-      bucketHints: {
-        trip_overview:    { hints: ['string'] },
-        highlights:       { hints: ['string'] },
-        disappointments:  { hints: ['string'] },
-        food:             { hints: ['string'] },
-        restaurants:      { hints: ['string'] },
-        logistics:        { hints: ['string'] },
-        budget:           { hints: ['string'] },
-        mistakes:         { hints: ['string'] },
-        practical_tips:   { hints: ['string'] },
-      },
-      uniqueAngles:    ['string'],
-      redditQuestions: ['string'],
-      cityResearch: {
-        '[city]': {
-          food:           ['string'],
-          activities:     ['string'],
-          tips:           ['string'],
-          commonMistakes: ['string'],
-        },
-      },
+      const destination = ctx.intake.destination_country as string;
+      const tripType    = ctx.intake.trip_type as string;
+      const purpose     = ctx.intake.trip_purpose as string;
+      return buildResearchPrompt(destination, ctx.uniqueValues.cities ?? [], tripType, purpose);
     },
   },
 
@@ -208,96 +203,41 @@ export const config: InterviewConfig = {
   interview: {
     voice: 'alloy',
     realtimeModel: 'gpt-4o-realtime-preview',
-    // CRITICAL: Never remove transcriptionModel — without it, the user's audio
-    // is never transcribed and the extraction model hallucinates answers.
-    // See CLAUDE.md Critical Decision #1.
-    transcriptionModel: 'gpt-4o-mini-transcribe',
+    transcriptionModel: 'gpt-4o-mini-transcribe', // see CLAUDE.md Critical Decision #1
     targetDurationMin: 15,
 
-    // The persona is built at session-start from live intake data.
-    // It forms the opening block of the voice bot's system prompt.
-    personaBuilder: (ctx: InterviewContext): string => {
-      const intake = ctx.intake as Record<string, string>;
-      return buildInterviewerPersona(
-        intake.destination_country,
+    personaBuilder: (ctx: InterviewContext): string =>
+      buildInterviewerPersona(
+        ctx.intake.destination_country as string,
         ctx.uniqueValues.cities ?? [],
-      );
-    },
+      ),
 
-    // Ordered interview phases injected into the system prompt.
-    // The bot receives all phases upfront and transitions naturally.
-    phases: [
-      {
-        id: 'overview',
-        label: 'Overview',
-        instruction:
-          'Start with trip context — how the trip came about, general vibe, initial impressions. 2-3 minutes max.',
-      },
-      {
-        id: 'day_by_day',
-        label: 'Day by day',
-        instruction:
-          'Walk through each city block from the itinerary in order. For each city, ask what they did, where they ate, and what stood out. Use the CITY-SPECIFIC PROBES from the research context.',
-      },
-      {
-        id: 'themes',
-        label: 'Cross-cutting themes',
-        instruction:
-          'Cover any mandatory topics not yet addressed: budget, negatives/disappointments, logistics, specific restaurant recs.',
-      },
-      {
-        id: 'rapid_fire',
-        label: 'Research rapid fire',
-        instruction:
-          'Transition with: "We did some research before this — found some common questions people ask. Quick fire round, give me short answers." Then ask every MANDATORY PHASE 4 QUESTION from the research context, one at a time.',
-      },
-      {
-        id: 'close',
-        label: 'Close',
-        instruction:
-          '"That\'s super helpful — thanks! One last thing — if someone at your company was planning the same trip, what\'s the one thing you\'d tell them?" Thank them and end.',
-      },
-    ],
+    phases: TRAVEL_PHASES,
   },
 
   // ── Extraction ────────────────────────────────────────────────────────────
-  // Pulls structured facts from the cleaned transcript.
-  // The _evidenceLog requirement prevents hallucination — every extracted fact
-  // must cite a verbatim transcript quote. See CLAUDE.md Critical Decision #4.
   extraction: {
     requireEvidenceLog: true,
-    promptBuilder: (transcript: string, ctx: InterviewContext): string => {
-      const intake = ctx.intake as Record<string, string>;
-      return buildExtractionPrompt(
+    promptBuilder: (transcript: string, ctx: InterviewContext): string =>
+      buildExtractionPrompt(
         transcript,
-        intake.destination_country,
+        ctx.intake.destination_country as string,
         ctx.uniqueValues.cities ?? [],
-      );
-    },
+      ),
   },
 
   // ── Outputs ───────────────────────────────────────────────────────────────
-  // At least one output is required. The first is treated as the primary
-  // artifact shown in the review UI.
   outputs: [
     {
       id: 'article',
       label: 'Travel Article',
       format: 'markdown',
-      // Uses gpt-4.1 (default). Override with `model` to use a different one.
-      promptBuilder: (
-        extracted: Record<string, unknown>,
-        transcript: string,
-        ctx: InterviewContext,
-      ): string => {
-        // Cast to travel-specific types — safe here because this config
-        // populates intake with the travel fields defined above.
-        return buildArticlePrompt(
+      promptBuilder: (extracted, transcript, ctx): string =>
+        buildArticlePrompt(
           extracted as unknown as ExtractedData,
           transcript,
           ctx.intake as unknown as IntakeResponse,
-        );
-      },
+        ),
     },
   ],
 

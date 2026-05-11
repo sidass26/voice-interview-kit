@@ -161,13 +161,11 @@ export interface ResearchConfig {
    */
   promptBuilder: (ctx: InterviewContext) => string;
   /**
-   * A plain-English description of the expected JSON response shape,
-   * used to validate the research output at runtime. Provide the same
-   * structure as what `promptBuilder` asks the model to return.
-   *
-   * Example: `{ destination: "string", bucketHints: { food: { hints: ["string"] } } }`
+   * Optional hint describing the expected JSON shape returned by the research
+   * model. Not enforced at runtime yet — treated as documentation for prompt
+   * authors. Validated enforcement is planned for a future release.
    */
-  responseSchema: Record<string, unknown>;
+  responseSchemaHint?: Record<string, unknown>;
   /**
    * System instructions for the research AI (the web-search model).
    * Defaults to a generic "search for real community discussions" prompt.
@@ -188,8 +186,8 @@ export interface InterviewPhase {
   instruction: string;
 }
 
-/** Voice interview configuration. */
-export interface InterviewEngineConfig {
+/** Voice interview configuration — persona, phases, and model settings. */
+export interface InterviewerConfig {
   /**
    * OpenAI Realtime voice.
    * Options: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' | 'verse'
@@ -296,11 +294,8 @@ export interface ConnectorConfig {
 export interface CampaignConfig {
   /** Enable the /admin/campaigns UI and /i/[token] invitee route. */
   enabled: boolean;
-  /**
-   * How long an invitation link stays valid.
-   * Format: '7d', '30d', '90d', or 'never'.
-   */
-  tokenTTL: string;
+  /** How long an invitation link stays valid before it expires. */
+  tokenTTL: '7d' | '30d' | '90d' | 'never';
   /**
    * When true, the standard /intake route works without an invitation token
    * (open access). When false, intake requires a valid /i/[token] link.
@@ -328,13 +323,14 @@ export interface InterviewConfig {
   intake: IntakeConfig;
   /** Omit or set `enabled: false` to skip the research phase entirely. */
   research?: ResearchConfig;
-  interview: InterviewEngineConfig;
+  interview: InterviewerConfig;
   extraction: ExtractionConfig;
   /**
    * One or more output artifacts generated from each completed interview.
    * The first output is treated as the primary artifact in the review UI.
+   * The engine throws at startup if this array is empty.
    */
-  outputs: [OutputConfig, ...OutputConfig[]]; // at least one required
+  outputs: OutputConfig[];
   /**
    * External publish targets. Credentials live in env vars — see ConnectorConfig.
    * Omit entirely if you don't need auto-publishing.

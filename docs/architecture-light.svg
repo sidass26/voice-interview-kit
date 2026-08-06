@@ -1,0 +1,57 @@
+<svg viewBox="0 0 1400 1000" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dt">
+<title id="dt">voice-interview-kit system architecture</title>
+<defs>
+<marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#59636e"/></marker>
+</defs>
+<text x="40" y="56" fill="#1f2328" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:20px;font-weight:700">voice-interview-kit &#8212; system architecture</text>
+<line x1="40" y1="100" x2="72" y2="100" stroke="#1f2328" stroke-width="2.5"/>
+<text x="82" y="105" fill="#59636e" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px">Real-time audio path (WebRTC)</text>
+<rect x="310" y="92" width="16" height="16" rx="4" fill="#ddf4ff" stroke="#54aeff"/>
+<text x="334" y="105" fill="#59636e" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px">Async data path (HTTPS)</text>
+<rect x="70" y="150" width="230" height="150" rx="12" fill="#ffffff" stroke="#8c959f" stroke-width="1.5"/>
+<text x="185.0" y="218.0" text-anchor="middle" fill="#1f2328" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:14px;font-weight:600;letter-spacing:1px">INTERVIEWEE</text>
+<text x="185.0" y="244.0" text-anchor="middle" fill="#59636e" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px">Just talks &#183; no typing</text>
+<rect x="560" y="150" width="300" height="150" rx="12" fill="#ffffff" stroke="#8c959f" stroke-width="1.5"/>
+<text x="710.0" y="218.0" text-anchor="middle" fill="#1f2328" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:14px;font-weight:600;letter-spacing:1px">INTERVIEW UI</text>
+<text x="710.0" y="244.0" text-anchor="middle" fill="#59636e" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px">Browser &#183; Next.js client</text>
+<rect x="1090" y="150" width="270" height="150" rx="12" fill="#ffffff" stroke="#8c959f" stroke-width="1.5"/>
+<text x="1225.0" y="218.0" text-anchor="middle" fill="#1f2328" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:14px;font-weight:600;letter-spacing:1px">OPENAI REALTIME</text>
+<text x="1225.0" y="244.0" text-anchor="middle" fill="#59636e" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px">Voice model &#183; gpt-4o-realtime</text>
+<line x1="300" y1="205" x2="552" y2="205" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="430" y="193" text-anchor="middle" fill="#59636e" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:11px;letter-spacing:1px">USER AUDIO</text>
+<line x1="560" y1="255" x2="308" y2="255" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="430" y="282" text-anchor="middle" fill="#59636e" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:11px;letter-spacing:1px">ASSISTANT AUDIO</text>
+<line x1="860" y1="205" x2="1082" y2="205" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="975" y="193" text-anchor="middle" fill="#59636e" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:11px;letter-spacing:1px">WEBRTC AUDIO</text>
+<line x1="1090" y1="255" x2="868" y2="255" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="975" y="282" text-anchor="middle" fill="#59636e" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:11px;letter-spacing:1px">VOICE + TRANSCRIPTS</text>
+<path d="M620,300 L620,440 L210,440 L210,552" fill="none" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="415" y="428" text-anchor="middle" fill="#59636e" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:11px;letter-spacing:1px">TOKEN REQUEST &#183; TRANSCRIPT PATCH</text>
+<path d="M280,560 L280,505 L780,505 L780,308" fill="none" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="530" y="493" text-anchor="middle" fill="#59636e" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:11px;letter-spacing:1px">EPHEMERAL TOKEN + INSTRUCTIONS</text>
+<rect x="70" y="560" width="280" height="160" rx="12" fill="#ddf4ff" stroke="#54aeff" stroke-width="1.5"/>
+<text x="210.0" y="633.0" text-anchor="middle" fill="#1f2328" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:14px;font-weight:600;letter-spacing:1px">NEXT.JS SERVER</text>
+<text x="210.0" y="659.0" text-anchor="middle" fill="#59636e" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px">Tokens &#183; orchestration &#183; pipeline</text>
+<rect x="600" y="560" width="280" height="160" rx="12" fill="#ddf4ff" stroke="#54aeff" stroke-width="1.5"/>
+<text x="740.0" y="633.0" text-anchor="middle" fill="#1f2328" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:14px;font-weight:600;letter-spacing:1px">GPT-4.1 INSTANCE</text>
+<text x="740.0" y="659.0" text-anchor="middle" fill="#59636e" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px">Text model</text>
+<rect x="1090" y="530" width="270" height="230" rx="12" fill="#ddf4ff" stroke="#54aeff" stroke-width="1.5"/>
+<text x="1225" y="568" text-anchor="middle" fill="#1f2328" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:14px;font-weight:600;letter-spacing:1px">TOOLS</text>
+<rect x="1120" y="592" width="210" height="42" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<text x="1225" y="618" text-anchor="middle" fill="#1f2328" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px">Web search</text>
+<rect x="1120" y="648" width="210" height="42" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<text x="1225" y="674" text-anchor="middle" fill="#1f2328" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px">Fact extraction</text>
+<rect x="1120" y="704" width="210" height="42" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<text x="1225" y="730" text-anchor="middle" fill="#1f2328" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px">Article writer</text>
+<line x1="350" y1="610" x2="592" y2="610" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="475" y="598" text-anchor="middle" fill="#59636e" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:11px;letter-spacing:1px">PIPELINE REQUEST</text>
+<line x1="600" y1="670" x2="358" y2="670" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="475" y="696" text-anchor="middle" fill="#59636e" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:11px;letter-spacing:1px">STRUCTURED RESULTS</text>
+<line x1="880" y1="600" x2="1082" y2="600" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="1090" y1="650" x2="888" y2="650" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+<rect x="70" y="830" width="280" height="110" rx="12" fill="#ffffff" stroke="#8c959f" stroke-width="1.5"/>
+<text x="210.0" y="878.0" text-anchor="middle" fill="#1f2328" style="font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:14px;font-weight:600;letter-spacing:1px">SUPABASE</text>
+<text x="210.0" y="904.0" text-anchor="middle" fill="#59636e" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px">Sessions &#183; transcripts &#183; drafts</text>
+<line x1="190" y1="720" x2="190" y2="822" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="230" y1="830" x2="230" y2="728" stroke="#59636e" stroke-width="1.5" marker-end="url(#ah)"/>
+</svg>

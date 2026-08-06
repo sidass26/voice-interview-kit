@@ -17,11 +17,23 @@ export interface InterviewSession {
   completed_at: string | null;
   duration_seconds: number | null;
   notes: string | null;
+  /** Set at session creation — identifies the config that created this session. */
+  config_version: string | null;
 }
 
 export interface IntakeResponse {
   id: string;
   session_id: string;
+  created_at: string;
+  /**
+   * The full intake payload as submitted by the user (migration 004+).
+   * This is the primary source of truth for sessions created after 004.
+   * All fields from the config's intake form are present here.
+   */
+  data?: Record<string, unknown>;
+  // ── Travel-specific typed columns (kept for backward compat) ──────────────
+  // Present on legacy sessions (pre-004). On new sessions these are
+  // derived from `data` by getIntake() so callers always see them.
   employee_name: string;
   work_email: string;
   destination_country: string;
@@ -34,7 +46,6 @@ export interface IntakeResponse {
   trip_end_date: string | null;
   itinerary: ItineraryDay[];
   images: TripImage[];
-  created_at: string;
 }
 
 export interface AuthorProfile {

@@ -10,9 +10,15 @@
  *   - Which connectors to publish to (WordPress, Notion, Slack, webhook)
  *   - Whether to enable bulk-invite campaigns
  *
- * The engine (WebRTC, Supabase, pipeline) reads this file and never
- * hardcodes domain logic. Swap this file with one from the `examples/`
- * directory to change the entire use case without touching engine code.
+ * STATUS — read before relying on a field below.
+ * The engine currently reads only a subset of this config: the four
+ * prompt builders (research, persona, extraction, output), the model and
+ * voice settings, `research.enabled`, `intake.subjectNameField`, and
+ * `intake.repeatingSection`. The remaining fields — branding, subject
+ * labels, `intake.fields`, `interview.phases`, connectors, campaigns —
+ * are declared and typed but NOT yet consumed; the UI still hardcodes
+ * their travel equivalents. Swapping this file alone will not change the
+ * use case yet. See the Roadmap in README.md for the wiring order.
  *
  * ---------------------------------------------------------------------------
  * CURRENT CONFIG: Travel Stories

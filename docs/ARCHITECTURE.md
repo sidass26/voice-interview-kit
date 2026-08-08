@@ -59,4 +59,12 @@ intake → researching → ready → interviewing → processing → completed
 | Evidence-log extraction | Every extracted fact must quote the interviewee verbatim, so interviewer *questions* can't masquerade as facts. |
 | Unknowns stay `null` | If budget (or anything else) wasn't discussed, it stays `null` and the article skips it — never estimated. |
 
-Everything domain-specific — branding, intake fields, interview phases, prompts, outputs — lives in [`interview.config.ts`](../interview.config.ts). The engine (WebRTC session, Supabase persistence, pipeline plumbing) is generic and reads the config at runtime.
+## Configuration layer (partially wired)
+
+[`interview.config.ts`](../interview.config.ts) is intended to hold everything domain-specific, so the engine can stay generic. That's the destination, not the current state.
+
+**Read by the engine today:** the four prompt builders (research, interviewer persona, extraction, output), the Realtime model/voice/transcription settings, `research.enabled`, `intake.subjectNameField`, and `intake.repeatingSection`.
+
+**Declared but not yet consumed:** `branding`, `subject.label` / `profileFields`, `intake.fields`, `intake.topicField`, `interview.phases`, `extraction.requireEvidenceLog`, `connectors`, `campaigns`. The UI hardcodes travel equivalents for these.
+
+The genuinely domain-agnostic pieces to build on are the [`InterviewContext`](../src/lib/config/types.ts) contract and four engine files that already contain zero travel references: `extractor.ts`, `article-generator.ts`, `research-service.ts`, and the realtime token route. The wiring order is in the README roadmap.

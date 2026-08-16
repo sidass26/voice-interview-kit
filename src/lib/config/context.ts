@@ -30,12 +30,18 @@ export function buildContext(
   const nameField  = cfg.intake.subjectNameField ?? 'employee_name';
   const emailField = 'work_email';
 
+  // Rows live under the config's repeating-section id; `itinerary` is the
+  // pre-generalization column name and stays as a fallback for older rows.
+  const rs = cfg.intake.repeatingSection;
+  const repeatingItems = ((rs ? intakeData[rs.id] : undefined) ??
+    intake.itinerary ??
+    []) as Record<string, unknown>[];
+
   // Derive unique values from the repeating section definition.
   const uniqueValues: Record<string, string[]> = {};
-  const rs = cfg.intake.repeatingSection;
   if (rs?.extractUniqueValues) {
     const { fromField, toContextKey } = rs.extractUniqueValues;
-    const rows = (intake.itinerary ?? []) as unknown as Record<string, string>[];
+    const rows = repeatingItems as Record<string, string>[];
     uniqueValues[toContextKey] = [...new Set(rows.map((r) => r[fromField]).filter(Boolean))];
   }
   // Ensure destination_cities is always available as ctx.uniqueValues.cities
@@ -48,7 +54,7 @@ export function buildContext(
       email: (intakeData[emailField] as string) ?? '',
     },
     intake:         intakeData,
-    repeatingItems: (intake.itinerary ?? []) as unknown as Record<string, unknown>[],
+    repeatingItems,
     uniqueValues,
     research,
   };

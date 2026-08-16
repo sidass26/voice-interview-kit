@@ -14,17 +14,23 @@ export function buildWordPressPayload(
 ): WordPressPayload {
   const htmlContent = markdownToHtml(articleMarkdown, imagePlacements);
 
-  const slugParts = [
-    extracted.destination.toLowerCase().replace(/\s+/g, '-'),
-    extracted.cities[0]?.toLowerCase().replace(/\s+/g, '-') || '',
-    'travel-guide',
-  ].filter(Boolean);
-  const slug = slugParts.join('-').replace(/[^a-z0-9-]/g, '');
+  // Extraction shape varies by config, so every field here is treated as
+  // optional — a missing topic must degrade to a usable slug, not a crash.
+  const topic = extracted.destination ?? '';
+  const cities = extracted.cities ?? [];
+  const kebab = (s: string) => s.toLowerCase().replace(/\s+/g, '-');
+
+  const slugParts = [kebab(topic), cities[0] ? kebab(cities[0]) : '', 'travel-guide'].filter(
+    Boolean
+  );
+  const slug = slugParts.join('-').replace(/[^a-z0-9-]/g, '') || 'interview';
 
   const titleMatch = articleMarkdown.match(/^#\s+(.+)$/m);
   const title = titleMatch
     ? titleMatch[1]
-    : `${extracted.destination}: A First-Person Travel Guide`;
+    : topic
+      ? `${topic}: A First-Person Travel Guide`
+      : 'A First-Person Account';
 
   const firstParagraph = articleMarkdown
     .split('\n')
@@ -33,10 +39,10 @@ export function buildWordPressPayload(
     ? firstParagraph.slice(0, 300).trim() + (firstParagraph.length > 300 ? '...' : '')
     : '';
 
-  const categories = ['Travel', extracted.destination];
+  const categories = ['Travel', topic].filter(Boolean);
   const tags = [
-    extracted.destination,
-    ...extracted.cities,
+    topic,
+    ...cities,
     extracted.purpose || intake.trip_purpose,
     ...(extracted.foodMentions?.length > 0 ? ['Food'] : []),
     ...(extracted.budgetBreakdown?.total ? ['Budget Travel'] : []),

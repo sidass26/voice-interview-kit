@@ -68,13 +68,50 @@ export async function listSessions(): Promise<InterviewSession[]> {
 
 // ---- Intake ----
 
+/**
+ * Typed columns on `intake_responses` that still have consumers outside the
+ * generic `data` blob. Everything else in a payload lives only in `data`.
+ *
+ * A generic payload cannot be spread into the insert — unknown keys are a hard
+ * Postgres error — so writes are projected through this whitelist.
+ *
+ * `employee_name` and `work_email` are still NOT NULL (migration 004 dropped
+ * the constraint on the other travel columns but missed these two), so a config
+ * whose intake fields don't include those exact ids will fail the insert.
+ * Fixing that needs a migration 005.
+ */
+const INTAKE_TYPED_COLUMNS = [
+  'employee_name',       // listPublishedStories → author_name
+  'work_email',          // join key for getAuthorProfile; indexed
+  'destination_country', // listPublishedStories
+  'destination_cities',  // listPublishedStories
+  'trip_type',           // dashboard
+  'trip_purpose',        // listPublishedStories
+  'num_travelers',       // review panel
+  'trip_duration_days',  // interviewer + article prompts, article page
+  'itinerary',           // buildContext repeatingItems, photo day-picker
+  'images',              // updateIntakeImages, review panel
+] as const;
+
 export async function saveIntake(
   sessionId: string,
-  formData: IntakeFormData
+  formData: IntakeFormData | Record<string, unknown>
 ): Promise<IntakeResponse> {
+  const payload = formData as Record<string, unknown>;
+
+  const projected: Record<string, unknown> = {};
+  for (const col of INTAKE_TYPED_COLUMNS) {
+    if (payload[col] !== undefined) projected[col] = payload[col];
+  }
+  // The repeating section exposes its unique values under a config-chosen key
+  // (`cities` for travel); the legacy column expects `destination_cities`.
+  if (projected.destination_cities === undefined && Array.isArray(payload.cities)) {
+    projected.destination_cities = payload.cities;
+  }
+
   const { data, error } = await supabase()
     .from('intake_responses')
-    .insert({ session_id: sessionId, ...formData })
+    .insert({ session_id: sessionId, ...projected, data: payload })
     .select()
     .single();
   if (error) throw new Error(`Failed to save intake: ${error.message}`);
@@ -88,7 +125,11 @@ export async function getIntake(sessionId: string): Promise<IntakeResponse | nul
     .eq('session_id', sessionId)
     .single();
   if (error && error.code !== 'PGRST116') throw new Error(`Failed to get intake: ${error.message}`);
-  return data;
+  if (!data) return null;
+
+  // `data` is the source of truth for sessions created after migration 004;
+  // the typed columns are the fallback for older rows.
+  return { ...data, ...(data.data ?? {}), data: data.data };
 }
 
 export async function updateIntakeImages(

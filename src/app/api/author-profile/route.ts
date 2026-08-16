@@ -4,6 +4,11 @@ import { upsertAuthorProfile, getAuthorProfile } from '@/lib/orchestration/sessi
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    // TODO: `profile` is spread straight into the author_profiles upsert, so
+    // config.subject.profileFields ids are load-bearing — they must match the
+    // table's columns (role, bio, twitter, instagram, linkedin). A config with
+    // different ids will fail this write. Generalizing needs a JSONB column
+    // here, the same way intake_responses.data works.
     const { work_email, employee_name, ...profile } = body;
 
     if (!work_email || !employee_name) {

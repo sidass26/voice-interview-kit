@@ -1,28 +1,23 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from './ui/button';
-import { Input, Select } from './ui/input';
 import { Card, CardHeader, CardContent } from './ui/card';
-import type { ItineraryDay, TripImage } from '@/lib/types';
+import { ConfigField, isFilled } from './config-field';
+import type { FieldDefinition, RepeatingSection } from '@/lib/config/types';
+import type { TripImage } from '@/lib/types';
 
-const PURPOSE_OPTIONS = [
-  { value: '', label: 'Select purpose...' },
-  { value: 'leisure', label: 'Leisure / Holiday' },
-  { value: 'honeymoon', label: 'Honeymoon' },
-  { value: 'anniversary', label: 'Anniversary Trip' },
-  { value: 'work+leisure', label: 'Work + Leisure (Bleisure)' },
-  { value: 'adventure', label: 'Adventure / Outdoors' },
-  { value: 'cultural', label: 'Cultural / Historical' },
-  { value: 'food', label: 'Food & Culinary' },
-  { value: 'family', label: 'Family Vacation' },
-  { value: 'friends', label: 'Friends Trip' },
-  { value: 'solo', label: 'Solo Trip' },
-  { value: 'other', label: 'Other' },
-];
-
-const STEP_LABELS = ['Trip basics', 'Itinerary', 'Your profile', 'Photos'];
+/**
+ * The serializable slice of InterviewConfig this form needs. Assembled in the
+ * `/intake` server component so prompt builders stay out of the client bundle.
+ */
+export interface IntakeFormConfig {
+  fields: FieldDefinition[];
+  repeatingSection: RepeatingSection | null;
+  profileFields: FieldDefinition[];
+  subjectLabel: string;
+}
 
 interface UploadedImage extends TripImage {
   localPreview: string;
@@ -30,113 +25,126 @@ interface UploadedImage extends TripImage {
   progress?: number; // 0–100
 }
 
-export function IntakeForm() {
+type StepKey = 'basics' | 'repeating' | 'profile' | 'photos';
+
+/** Seed a form state object from field definitions. */
+function seedState(fields: FieldDefinition[]): Record<string, unknown> {
+  return Object.fromEntries(
+    fields.map((f) => [f.id, f.type === 'number' ? (f.min ?? 1) : ''])
+  );
+}
+
+export function IntakeForm({ config }: { config: IntakeFormConfig }) {
   const router = useRouter();
+  const { fields, repeatingSection, profileFields } = config;
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [stepIndex, setStepIndex] = useState(0);
 
-  // Step 1: basics
-  const [form, setForm] = useState({
-    employee_name: '',
-    work_email: '',
-    destination_country: '',
-    trip_type: '',
-    trip_purpose: '',
-    num_travelers: 1,
-    trip_duration_days: 0,
-    trip_start_date: '',
-    trip_end_date: '',
-  });
-
-  // Step 2: itinerary
-  const [itinerary, setItinerary] = useState<ItineraryDay[]>([]);
-
-  // Step 3: author profile
-  const [authorProfile, setAuthorProfile] = useState({
-    role: '',
-    bio: '',
-    twitter: '',
-    instagram: '',
-    linkedin: '',
-    photo_url: null as string | null,
-    photo_storage_path: null as string | null,
-  });
+  const [form, setForm] = useState<Record<string, unknown>>(() => seedState(fields));
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [profile, setProfile] = useState<Record<string, unknown>>(() => seedState(profileFields));
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoStoragePath, setPhotoStoragePath] = useState<string | null>(null);
   const [authorPhotoUploading, setAuthorPhotoUploading] = useState(false);
   const authorPhotoRef = useRef<HTMLInputElement>(null);
 
-  // Step 4: trip photos
   const [images, setImages] = useState<UploadedImage[]>([]);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
-  const update = (field: string, value: string | number) =>
-    setForm((prev) => ({ ...prev, [field]: value }));
+  // The wizard skips the repeating step entirely when no section is configured,
+  // so indices and the progress bar adapt without any literal step numbers.
+  const steps = useMemo(() => {
+    const s: Array<{ key: StepKey; label: string }> = [{ key: 'basics', label: 'Basics' }];
+    if (repeatingSection) s.push({ key: 'repeating', label: repeatingSection.label });
+    s.push({ key: 'profile', label: 'Your profile' });
+    s.push({ key: 'photos', label: 'Photos' });
+    return s;
+  }, [repeatingSection]);
 
-  const updateAuthor = (field: string, value: string) =>
-    setAuthorProfile((prev) => ({ ...prev, [field]: value }));
+  const step = steps[stepIndex]?.key ?? 'basics';
+  const go = (delta: number) =>
+    setStepIndex((i) => Math.max(0, Math.min(i + delta, steps.length - 1)));
 
-  const handleDurationChange = (days: number) => {
-    const clamped = Math.max(1, Math.min(days, 30));
-    update('trip_duration_days', clamped);
-    setItinerary((prev) => {
-      const newItinerary: ItineraryDay[] = [];
-      for (let i = 1; i <= clamped; i++) {
-        const existing = prev.find((d) => d.day === i);
-        const prevCity = i > 1 ? (newItinerary[i - 2]?.city || '') : '';
-        newItinerary.push(existing || { day: i, city: prevCity, notes: '' });
-      }
-      return newItinerary;
-    });
+  // work_email is load-bearing for uploads and the author_profiles upsert.
+  // context.ts hardcodes the same id; generalizing both needs a
+  // `subjectEmailField` on IntakeConfig.
+  const workEmail = (form.work_email as string) ?? '';
+
+  const rowField = repeatingSection?.extractUniqueValues?.fromField;
+  const uniqueValues = useMemo(() => {
+    if (!rowField) return [];
+    return [...new Set(rows.map((r) => (r[rowField] as string) ?? '').filter(Boolean))];
+  }, [rows, rowField]);
+
+  const update = (id: string, value: string | number) => {
+    setForm((prev) => ({ ...prev, [id]: value }));
+
+    // Grow or shrink the repeating section when its driving field changes,
+    // preserving anything already entered.
+    if (repeatingSection?.rowCountFromField === id) {
+      const count = Math.max(0, Math.min(Number(value) || 0, 60));
+      setRows((prev) => {
+        if (count <= prev.length) return prev.slice(0, count);
+        const next = [...prev];
+        while (next.length < count) {
+          const carry = rowField ? { [rowField]: next[next.length - 1]?.[rowField] ?? '' } : {};
+          next.push({ ...seedState(repeatingSection.itemFields), ...carry });
+        }
+        return next;
+      });
+    }
   };
 
-  const updateDay = (dayIndex: number, field: 'city' | 'notes', value: string) => {
-    setItinerary((prev) => {
+  const updateRow = (index: number, id: string, value: string | number) => {
+    setRows((prev) => {
       const updated = [...prev];
-      updated[dayIndex] = { ...updated[dayIndex], [field]: value };
-      if (field === 'city' && dayIndex < updated.length - 1) {
-        const oldCity = prev[dayIndex].city;
-        for (let i = dayIndex + 1; i < updated.length; i++) {
-          if (updated[i].city === oldCity || updated[i].city === '') {
-            updated[i] = { ...updated[i], city: value };
-          } else {
-            break;
-          }
+      updated[index] = { ...updated[index], [id]: value };
+
+      // Carry the grouping value forward into following rows that still match
+      // the old value or are empty — e.g. a city persists until it changes.
+      if (id === rowField && index < updated.length - 1) {
+        const oldValue = prev[index]?.[id];
+        for (let i = index + 1; i < updated.length; i++) {
+          if (updated[i][id] === oldValue || updated[i][id] === '') {
+            updated[i] = { ...updated[i], [id]: value };
+          } else break;
         }
       }
       return updated;
     });
   };
 
+  const addRow = () =>
+    setRows((prev) => [...prev, seedState(repeatingSection?.itemFields ?? [])]);
+  const removeRow = (index: number) =>
+    setRows((prev) => prev.filter((_, i) => i !== index));
+
   const handleAuthorPhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !form.work_email) return;
+    if (!file || !workEmail) return;
 
     setAuthorPhotoUploading(true);
-    const localUrl = URL.createObjectURL(file);
-
     try {
       const fd = new FormData();
       fd.append('file', file);
       fd.append('type', 'author');
-      fd.append('email', form.work_email);
+      fd.append('email', workEmail);
 
       const res = await fetch('/api/upload', { method: 'POST', body: fd });
       if (!res.ok) throw new Error('Upload failed');
       const { url, storagePath } = await res.json();
-      setAuthorProfile((prev) => ({
-        ...prev,
-        photo_url: url,
-        photo_storage_path: storagePath,
-      }));
+      setPhotoUrl(url);
+      setPhotoStoragePath(storagePath);
     } catch {
       setError('Photo upload failed — you can add it later.');
     } finally {
       setAuthorPhotoUploading(false);
-      URL.revokeObjectURL(localUrl);
     }
   };
 
-  const uploadWithProgress = (file: File, fd: FormData, slotIndex: number): Promise<void> =>
+  const uploadWithProgress = (fd: FormData, slotIndex: number): Promise<void> =>
     new Promise((resolve) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/upload');
@@ -151,41 +159,28 @@ export function IntakeForm() {
         });
       };
 
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const { url, storagePath } = JSON.parse(xhr.responseText);
-            setImages((prev) => {
-              const updated = [...prev];
-              updated[slotIndex] = { ...updated[slotIndex], url, storagePath, uploading: false, progress: 100 };
-              return updated;
-            });
-          } catch {
-            setImages((prev) => {
-              const updated = [...prev];
-              updated[slotIndex] = { ...updated[slotIndex], uploading: false };
-              return updated;
-            });
-          }
-        } else {
-          setImages((prev) => {
-            const updated = [...prev];
-            updated[slotIndex] = { ...updated[slotIndex], uploading: false };
-            return updated;
-          });
-        }
-        resolve();
-      };
-
-      xhr.onerror = () => {
+      const settle = (patch: Partial<UploadedImage>) => {
         setImages((prev) => {
           const updated = [...prev];
-          updated[slotIndex] = { ...updated[slotIndex], uploading: false };
+          updated[slotIndex] = { ...updated[slotIndex], uploading: false, ...patch };
           return updated;
         });
         resolve();
       };
 
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const { url, storagePath } = JSON.parse(xhr.responseText);
+            settle({ url, storagePath, progress: 100 });
+            return;
+          } catch {
+            /* fall through to the plain failure path */
+          }
+        }
+        settle({});
+      };
+      xhr.onerror = () => settle({});
       xhr.send(fd);
     });
 
@@ -193,20 +188,21 @@ export function IntakeForm() {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
 
-    const tempId = `temp-${form.work_email.replace('@', '_')}-${Date.now()}`;
+    const tempId = `temp-${workEmail.replace('@', '_')}-${Date.now()}`;
     const slots = files.slice(0, 10 - images.length);
 
-    const newImages: UploadedImage[] = slots.map((file) => ({
-      url: '',
-      storagePath: '',
-      description: '',
-      localPreview: URL.createObjectURL(file),
-      uploading: true,
-      progress: 0,
-    }));
-
     const startIndex = images.length;
-    setImages((prev) => [...prev, ...newImages]);
+    setImages((prev) => [
+      ...prev,
+      ...slots.map((file) => ({
+        url: '',
+        storagePath: '',
+        description: '',
+        localPreview: URL.createObjectURL(file),
+        uploading: true,
+        progress: 0,
+      })),
+    ]);
 
     await Promise.all(
       slots.map((file, i) => {
@@ -214,70 +210,58 @@ export function IntakeForm() {
         fd.append('file', file);
         fd.append('type', 'trip');
         fd.append('sessionId', tempId);
-        return uploadWithProgress(file, fd, startIndex + i);
+        return uploadWithProgress(fd, startIndex + i);
       })
     );
 
     if (photoInputRef.current) photoInputRef.current.value = '';
   };
 
-  const updateImageDescription = (index: number, description: string) => {
+  const patchImage = (index: number, patch: Partial<UploadedImage>) =>
     setImages((prev) => {
       const updated = [...prev];
-      updated[index] = { ...updated[index], description };
+      updated[index] = { ...updated[index], ...patch };
       return updated;
     });
-  };
 
-  const updateImageDay = (index: number, day: number | undefined) => {
+  const removeImage = (index: number) =>
     setImages((prev) => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], day };
-      return updated;
-    });
-  };
-
-  const removeImage = (index: number) => {
-    setImages((prev) => {
-      const updated = prev.filter((_, i) => i !== index);
       URL.revokeObjectURL(prev[index].localPreview);
-      return updated;
+      return prev.filter((_, i) => i !== index);
     });
-  };
 
-  const uniqueCities = [...new Set(itinerary.map((d) => d.city).filter(Boolean))];
+  const canLeaveBasics = fields
+    .filter((f) => f.required)
+    .every((f) => isFilled(f, form[f.id]));
 
-  const canProceedToStep2 =
-    form.employee_name &&
-    form.work_email &&
-    form.destination_country &&
-    form.trip_duration_days >= 1 &&
-    form.trip_purpose;
-
-  const canProceedToStep3 =
-    itinerary.length > 0 && itinerary.some((d) => d.city.trim() !== '');
+  // Only gate on the repeating section when it actually drives context.
+  const canLeaveRepeating = !rowField || uniqueValues.length > 0;
 
   const handleSubmit = async (skipPhotos = false) => {
     setLoading(true);
     setError(null);
 
     try {
-      const cities = uniqueCities;
-      if (cities.length === 0) {
-        setError('Please enter at least one city in the itinerary');
+      if (!canLeaveRepeating && repeatingSection) {
+        const label = repeatingSection.itemFields
+          .find((f) => f.id === rowField)?.label ?? 'value';
+        setError(`Please enter at least one ${label.toLowerCase()}.`);
         setLoading(false);
         return;
       }
 
-      // Save author profile (fire-and-forget, non-blocking)
-      if (authorProfile.role || authorProfile.bio || authorProfile.photo_url) {
+      // Author profile is fire-and-forget — a failure here must not block the
+      // interview. NB: these field ids must match author_profiles columns.
+      if (Object.values(profile).some(Boolean) || photoUrl) {
         fetch('/api/author-profile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            work_email: form.work_email,
+            work_email: workEmail,
             employee_name: form.employee_name,
-            ...authorProfile,
+            ...profile,
+            photo_url: photoUrl,
+            photo_storage_path: photoStoragePath,
           }),
         }).catch(console.error);
       }
@@ -293,25 +277,21 @@ export function IntakeForm() {
               day,
             }));
 
+      const payload: Record<string, unknown> = { ...form, images: readyImages };
+      if (repeatingSection) {
+        // `day` is synthesised from row order — it isn't an itemField, but
+        // ItineraryDay and the photo day-picker both depend on it.
+        payload[repeatingSection.id] = rows.map((r, i) => ({ ...r, day: i + 1 }));
+        if (repeatingSection.extractUniqueValues) {
+          payload[repeatingSection.extractUniqueValues.toContextKey] = uniqueValues;
+        }
+      }
+
       const response = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employee_name: form.employee_name,
-          work_email: form.work_email,
-          destination_country: form.destination_country,
-          destination_cities: cities,
-          trip_type: form.trip_type,
-          trip_purpose: form.trip_purpose,
-          num_travelers: form.num_travelers,
-          trip_duration_days: form.trip_duration_days,
-          trip_start_date: form.trip_start_date || null,
-          trip_end_date: form.trip_end_date || null,
-          itinerary,
-          images: readyImages,
-        }),
+        body: JSON.stringify(payload),
       });
-
       if (!response.ok) throw new Error('Failed to create session');
 
       const { sessionId } = await response.json();
@@ -323,228 +303,182 @@ export function IntakeForm() {
   };
 
   const completedImagesCount = images.filter((img) => img.url && !img.uploading).length;
+  const isLast = stepIndex === steps.length - 1;
+
+  const headings: Record<StepKey, { title: string; blurb: string }> = {
+    basics: { title: 'Tell us the basics', blurb: 'Quick context so we can tailor the interview.' },
+    repeating: {
+      title: repeatingSection?.label ?? '',
+      blurb: 'This helps us walk through things in order.',
+    },
+    profile: {
+      title: 'Your author profile',
+      blurb: 'Shown on your published article for E-E-A-T credibility. You can skip and add later.',
+    },
+    photos: {
+      title: 'Add photos',
+      blurb: 'Photos appear contextually in the article. AI picks the cover. Optional.',
+    },
+  };
+
+  const errorBox = error ? (
+    <div className="p-3 bg-red-50 dark:bg-[rgba(239,68,68,0.1)] border border-red-200 dark:border-[rgba(239,68,68,0.3)] rounded-lg text-sm text-red-700 dark:text-red-400">
+      {error}
+    </div>
+  ) : null;
 
   return (
     <Card className="max-w-3xl mx-auto">
       <CardHeader>
         <h2 className="text-xl font-semibold text-gray-900 dark:text-[#ededf3]">
-          {step === 1 && 'Tell us about your trip'}
-          {step === 2 && 'Map your trip day by day'}
-          {step === 3 && 'Your author profile'}
-          {step === 4 && 'Add trip photos'}
+          {headings[step].title}
         </h2>
-        <p className="text-sm text-gray-500 dark:text-[#c3c3cc] mt-1">
-          {step === 1 && 'Quick basics so we can tailor the interview.'}
-          {step === 2 && 'This helps us walk through your trip chronologically.'}
-          {step === 3 && 'Shown on your published article for EEAT credibility. You can skip this and add it later.'}
-          {step === 4 && 'Photos appear contextually in the article. AI picks the cover. You can skip and add later.'}
-        </p>
-        {/* Step indicator */}
+        <p className="text-sm text-gray-500 dark:text-[#c3c3cc] mt-1">{headings[step].blurb}</p>
+
         <div className="flex items-center gap-1.5 mt-3">
-          {STEP_LABELS.map((label, i) => (
-            <div key={label} className="flex items-center gap-1.5 flex-1">
-              <div className={`h-1.5 flex-1 rounded-full transition-colors ${step > i ? 'bg-blue-600 dark:bg-[#6B2AEA]' : step === i + 1 ? 'bg-blue-400 dark:bg-[#9B59E8]' : 'bg-gray-200 dark:bg-[#272735]'}`} />
-            </div>
+          {steps.map((s, i) => (
+            <div
+              key={s.key}
+              className={`h-1.5 flex-1 rounded-full transition-colors ${
+                stepIndex > i
+                  ? 'bg-blue-600 dark:bg-[#6B2AEA]'
+                  : stepIndex === i
+                    ? 'bg-blue-400 dark:bg-[#9B59E8]'
+                    : 'bg-gray-200 dark:bg-[#272735]'
+              }`}
+            />
           ))}
         </div>
         <div className="flex gap-1.5 mt-1">
-          {STEP_LABELS.map((label, i) => (
+          {steps.map((s, i) => (
             <span
-              key={label}
-              className={`flex-1 text-center text-[10px] font-medium ${step === i + 1 ? 'text-blue-600 dark:text-[#A78BFA]' : 'text-gray-400 dark:text-[#70707d]'}`}
+              key={s.key}
+              className={`flex-1 text-center text-[10px] font-medium ${
+                stepIndex === i
+                  ? 'text-blue-600 dark:text-[#A78BFA]'
+                  : 'text-gray-400 dark:text-[#70707d]'
+              }`}
             >
-              {label}
+              {s.label}
             </span>
           ))}
         </div>
       </CardHeader>
 
       <CardContent>
-        {/* Step 1: Basics */}
-        {step === 1 && (
+        {step === 'basics' && (
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-4">
-              <Input
-                id="employee_name"
-                label="Your name"
-                placeholder="Alex Johnson"
-                value={form.employee_name}
-                onChange={(e) => update('employee_name', e.target.value)}
-                required
-              />
-              <Input
-                id="work_email"
-                label="Work email"
-                type="email"
-                placeholder="jane@company.com"
-                value={form.work_email}
-                onChange={(e) => update('work_email', e.target.value)}
-                required
-              />
+              {fields.map((f) => (
+                <div key={f.id} className={f.type === 'textarea' ? 'col-span-2' : undefined}>
+                  <ConfigField
+                    def={f}
+                    value={form[f.id]}
+                    onChange={(v) => update(f.id, v)}
+                  />
+                </div>
+              ))}
             </div>
-
-            <Input
-              id="destination_country"
-              label="Destination country"
-              placeholder="Japan"
-              value={form.destination_country}
-              onChange={(e) => update('destination_country', e.target.value)}
-              required
-            />
-
-            <Input
-              id="trip_type"
-              label="Trip in a nutshell"
-              placeholder="5 days in Tokyo and Kyoto, mostly food and temples"
-              value={form.trip_type}
-              onChange={(e) => update('trip_type', e.target.value)}
-            />
-
-            <div className="grid grid-cols-3 gap-4">
-              <Select
-                id="trip_purpose"
-                label="Purpose"
-                options={PURPOSE_OPTIONS}
-                value={form.trip_purpose}
-                onChange={(e) => update('trip_purpose', e.target.value)}
-                required
-              />
-              <Input
-                id="num_travelers"
-                label="Travelers"
-                type="number"
-                min={1}
-                max={20}
-                value={form.num_travelers}
-                onChange={(e) => update('num_travelers', parseInt(e.target.value) || 1)}
-                required
-              />
-              <Input
-                id="trip_duration_days"
-                label="Duration (days)"
-                type="number"
-                min={1}
-                max={30}
-                placeholder="5"
-                value={form.trip_duration_days || ''}
-                onChange={(e) => handleDurationChange(parseInt(e.target.value) || 0)}
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                id="trip_start_date"
-                label="Trip start date (optional)"
-                type="date"
-                value={form.trip_start_date}
-                onChange={(e) => update('trip_start_date', e.target.value)}
-              />
-              <Input
-                id="trip_end_date"
-                label="Trip end date (optional)"
-                type="date"
-                value={form.trip_end_date}
-                onChange={(e) => update('trip_end_date', e.target.value)}
-              />
-            </div>
-
-            <Button
-              size="lg"
-              className="w-full"
-              onClick={() => setStep(2)}
-              disabled={!canProceedToStep2}
-            >
-              Next — Map your itinerary
+            {errorBox}
+            <Button size="lg" className="w-full" onClick={() => go(1)} disabled={!canLeaveBasics}>
+              Next — {steps[1].label}
             </Button>
           </div>
         )}
 
-        {/* Step 2: Itinerary */}
-        {step === 2 && (
+        {step === 'repeating' && repeatingSection && (
           <div className="space-y-4">
             <div className="flex items-center justify-between text-sm text-gray-500 dark:text-[#c3c3cc] bg-gray-50 dark:bg-[#272735] rounded-lg px-4 py-2">
               <span>
-                {form.destination_country} · {form.trip_duration_days} days
-                {uniqueCities.length > 0 && ` · ${uniqueCities.join(', ')}`}
+                {rows.length} {rows.length === 1 ? 'entry' : 'entries'}
+                {uniqueValues.length > 0 && ` · ${uniqueValues.join(', ')}`}
               </span>
-              <button onClick={() => setStep(1)} className="text-blue-600 dark:text-[#A78BFA] hover:underline">
+              <button
+                onClick={() => go(-1)}
+                className="text-blue-600 dark:text-[#A78BFA] hover:underline"
+              >
                 Edit basics
               </button>
             </div>
 
-            {itinerary.length > 3 && (
+            {rowField && rows.length > 3 && (
               <div className="text-xs text-gray-400 dark:text-[#70707d] bg-gray-50 dark:bg-[#1e1e2a] rounded px-3 py-2">
-                💡 City auto-fills from the previous day — update it when you change cities.
+                Tip: the value carries forward from the previous row — change it when it changes.
               </div>
             )}
 
             <div className="space-y-2">
-              {itinerary.map((day, i) => (
+              {rows.map((row, i) => (
                 <div
-                  key={day.day}
+                  key={i}
                   className="flex items-start gap-3 border border-gray-200 dark:border-[rgba(255,255,255,0.08)] rounded-lg px-4 py-3 hover:border-gray-300 dark:hover:border-[rgba(107,42,234,0.3)] transition-colors"
                 >
-                  <div className="flex-shrink-0 w-12 pt-1">
-                    <span className="text-sm font-medium text-gray-500 dark:text-[#70707d]">Day {day.day}</span>
+                  <div className="flex-shrink-0 w-12 pt-7">
+                    <span className="text-sm font-medium text-gray-500 dark:text-[#70707d]">
+                      {i + 1}
+                    </span>
                   </div>
                   <div className="flex-1 grid grid-cols-2 gap-3">
-                    <input
-                      type="text"
-                      placeholder="City / area"
-                      value={day.city}
-                      onChange={(e) => updateDay(i, 'city', e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-200 dark:border-[rgba(255,255,255,0.08)] bg-white dark:bg-[#1e1e2a] text-gray-900 dark:text-[#ededf3] placeholder:text-gray-400 dark:placeholder:text-[#70707d] rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#6B2AEA] focus:border-blue-500 dark:focus:border-[#6B2AEA]"
-                    />
-                    <input
-                      type="text"
-                      placeholder="What did you do? (optional)"
-                      value={day.notes}
-                      onChange={(e) => updateDay(i, 'notes', e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-200 dark:border-[rgba(255,255,255,0.08)] bg-white dark:bg-[#1e1e2a] text-gray-600 dark:text-[#c3c3cc] placeholder:text-gray-400 dark:placeholder:text-[#70707d] rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#6B2AEA] focus:border-blue-500 dark:focus:border-[#6B2AEA]"
-                    />
+                    {repeatingSection.itemFields.map((f) => (
+                      <ConfigField
+                        key={f.id}
+                        def={f}
+                        idPrefix={`row${i}_`}
+                        value={row[f.id]}
+                        onChange={(v) => updateRow(i, f.id, v)}
+                      />
+                    ))}
                   </div>
+                  <button
+                    onClick={() => removeRow(i)}
+                    aria-label={`Remove entry ${i + 1}`}
+                    className="text-gray-400 dark:text-[#70707d] hover:text-red-500 text-lg leading-none flex-shrink-0 mt-7"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
 
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                {error}
-              </div>
-            )}
+            <button
+              onClick={addRow}
+              className="text-sm text-blue-600 dark:text-[#A78BFA] hover:underline"
+            >
+              + {repeatingSection.addButtonLabel}
+            </button>
+
+            {errorBox}
 
             <div className="flex gap-3">
-              <Button variant="secondary" onClick={() => setStep(1)} className="flex-shrink-0">
+              <Button variant="secondary" onClick={() => go(-1)} className="flex-shrink-0">
                 Back
               </Button>
               <Button
                 size="lg"
                 className="flex-1"
-                onClick={() => setStep(3)}
-                disabled={!canProceedToStep3}
+                onClick={() => go(1)}
+                disabled={!canLeaveRepeating}
               >
-                Next — Your profile
+                Next — {steps[stepIndex + 1]?.label}
               </Button>
             </div>
           </div>
         )}
 
-        {/* Step 3: Author profile */}
-        {step === 3 && (
+        {step === 'profile' && (
           <div className="space-y-5">
-            {/* Photo upload */}
             <div className="flex items-start gap-4">
               <div
                 className="w-20 h-20 rounded-full border-2 border-dashed border-gray-300 dark:border-[rgba(255,255,255,0.15)] flex items-center justify-center cursor-pointer hover:border-blue-400 dark:hover:border-[#6B2AEA] transition-colors flex-shrink-0 overflow-hidden bg-gray-50 dark:bg-[#272735]"
                 onClick={() => authorPhotoRef.current?.click()}
               >
-                {authorProfile.photo_url ? (
-                  <img src={authorProfile.photo_url} alt="Author" className="w-full h-full object-cover" />
-                ) : authorPhotoUploading ? (
-                  <span className="text-xs text-gray-400 dark:text-[#70707d]">Uploading...</span>
+                {photoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={photoUrl} alt="Author" className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-2xl">📷</span>
+                  <span className="text-xs text-gray-400 dark:text-[#70707d]">
+                    {authorPhotoUploading ? 'Uploading…' : 'Photo'}
+                  </span>
                 )}
               </div>
               <input
@@ -553,99 +487,69 @@ export function IntakeForm() {
                 accept="image/*"
                 className="hidden"
                 onChange={handleAuthorPhotoSelect}
-                disabled={!form.work_email}
+                disabled={!workEmail}
               />
               <div className="flex-1">
-                <p className="text-sm font-medium text-gray-700 dark:text-[#c3c3cc]">Profile photo</p>
+                <p className="text-sm font-medium text-gray-700 dark:text-[#c3c3cc]">
+                  Profile photo
+                </p>
                 <p className="text-xs text-gray-500 dark:text-[#70707d] mt-0.5">
                   Shown in the author box on your article. Builds reader trust.
                 </p>
                 <button
                   onClick={() => authorPhotoRef.current?.click()}
-                  disabled={!form.work_email || authorPhotoUploading}
+                  disabled={!workEmail || authorPhotoUploading}
                   className="mt-2 text-xs text-blue-600 dark:text-[#A78BFA] hover:underline disabled:text-gray-400 dark:disabled:text-[#70707d]"
                 >
-                  {authorProfile.photo_url ? 'Change photo' : 'Upload photo'}
+                  {photoUrl ? 'Change photo' : 'Upload photo'}
                 </button>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <Input
-                id="author_role"
-                label="Your role at [Company]"
-                placeholder="Senior Product Manager"
-                value={authorProfile.role}
-                onChange={(e) => updateAuthor('role', e.target.value)}
-              />
-              <Input
-                id="author_twitter"
-                label="Twitter / X handle"
-                placeholder="@username"
-                value={authorProfile.twitter}
-                onChange={(e) => updateAuthor('twitter', e.target.value)}
-              />
+              {profileFields.map((f) => (
+                <div key={f.id} className={f.type === 'textarea' ? 'col-span-2' : undefined}>
+                  <ConfigField
+                    def={f}
+                    idPrefix="profile_"
+                    value={profile[f.id]}
+                    onChange={(v) => setProfile((prev) => ({ ...prev, [f.id]: v }))}
+                  />
+                </div>
+              ))}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-[#c3c3cc] mb-1.5">
-                Short bio
-              </label>
-              <textarea
-                placeholder="I'm a Product Manager who travels solo every few months. I care most about finding local food and avoiding tourist traps."
-                value={authorProfile.bio}
-                onChange={(e) => updateAuthor('bio', e.target.value)}
-                rows={3}
-                maxLength={300}
-                className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-[rgba(255,255,255,0.08)] bg-white dark:bg-[#1e1e2a] text-gray-900 dark:text-[#ededf3] placeholder:text-gray-400 dark:placeholder:text-[#70707d] rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#6B2AEA] focus:border-blue-500 dark:focus:border-[#6B2AEA] resize-none"
-              />
-              <p className="text-xs text-gray-400 dark:text-[#70707d] mt-1">{authorProfile.bio.length}/300</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                id="author_instagram"
-                label="Instagram"
-                placeholder="@username"
-                value={authorProfile.instagram}
-                onChange={(e) => updateAuthor('instagram', e.target.value)}
-              />
-              <Input
-                id="author_linkedin"
-                label="LinkedIn URL"
-                placeholder="linkedin.com/in/username"
-                value={authorProfile.linkedin}
-                onChange={(e) => updateAuthor('linkedin', e.target.value)}
-              />
-            </div>
+            {errorBox}
 
             <div className="flex gap-3">
-              <Button variant="secondary" onClick={() => setStep(2)} className="flex-shrink-0">
+              <Button variant="secondary" onClick={() => go(-1)} className="flex-shrink-0">
                 Back
               </Button>
-              <Button size="lg" className="flex-1" onClick={() => setStep(4)}>
+              <Button size="lg" className="flex-1" onClick={() => go(1)}>
                 Next — Add photos
               </Button>
             </div>
           </div>
         )}
 
-        {/* Step 4: Trip photos */}
-        {step === 4 && (
+        {step === 'photos' && (
           <div className="space-y-4">
             <div className="text-xs text-gray-500 dark:text-[#70707d] bg-amber-50 dark:bg-[#1e1e2a] border border-amber-200 dark:border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2">
-              📸 Photos are optional — you can skip now and add them later from the review page. AI will pick the cover and place others contextually in the article.
+              Photos are optional — you can skip now and add them later from the review page. AI
+              picks the cover and places the rest contextually.
             </div>
 
-            {/* Upload area */}
             {images.length < 10 && (
               <div
                 onClick={() => photoInputRef.current?.click()}
                 className="border-2 border-dashed border-gray-300 dark:border-[rgba(255,255,255,0.1)] rounded-xl p-6 text-center cursor-pointer hover:border-blue-400 dark:hover:border-[#6B2AEA] hover:bg-blue-50 dark:hover:bg-[rgba(107,42,234,0.05)] transition-colors"
               >
-                <div className="text-3xl mb-2">🖼️</div>
-                <p className="text-sm font-medium text-gray-700 dark:text-[#c3c3cc]">Click to add photos</p>
-                <p className="text-xs text-gray-400 dark:text-[#70707d] mt-1">Up to {10 - images.length} more · JPG, PNG, HEIC</p>
+                <p className="text-sm font-medium text-gray-700 dark:text-[#c3c3cc]">
+                  Click to add photos
+                </p>
+                <p className="text-xs text-gray-400 dark:text-[#70707d] mt-1">
+                  Up to {10 - images.length} more · JPG, PNG, HEIC
+                </p>
                 <input
                   ref={photoInputRef}
                   type="file"
@@ -657,7 +561,6 @@ export function IntakeForm() {
               </div>
             )}
 
-            {/* Photo cards */}
             {images.length > 0 && (
               <div className="space-y-3">
                 {images.map((img, i) => (
@@ -665,13 +568,9 @@ export function IntakeForm() {
                     key={i}
                     className="flex items-start gap-3 border border-gray-200 dark:border-[rgba(255,255,255,0.08)] rounded-lg p-3"
                   >
-                    {/* Preview */}
                     <div className="w-16 h-16 rounded-md overflow-hidden flex-shrink-0 bg-gray-100 dark:bg-[#272735] relative">
-                      <img
-                        src={img.localPreview}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img.localPreview} alt="" className="w-full h-full object-cover" />
                       {img.uploading && (
                         <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-1 px-1">
                           <span className="text-white text-[10px] font-semibold">
@@ -687,33 +586,42 @@ export function IntakeForm() {
                       )}
                     </div>
 
-                    {/* Fields */}
                     <div className="flex-1 space-y-1.5">
                       <input
                         type="text"
                         placeholder="Describe this photo — where, what, why it matters"
                         value={img.description}
-                        onChange={(e) => updateImageDescription(i, e.target.value)}
+                        onChange={(e) => patchImage(i, { description: e.target.value })}
                         className="w-full px-2 py-1.5 text-sm border border-gray-200 dark:border-[rgba(255,255,255,0.08)] bg-white dark:bg-[#1e1e2a] text-gray-900 dark:text-[#ededf3] placeholder:text-gray-400 dark:placeholder:text-[#70707d] rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#6B2AEA]"
                       />
-                      <select
-                        value={img.day ?? ''}
-                        onChange={(e) =>
-                          updateImageDay(i, e.target.value ? parseInt(e.target.value) : undefined)
-                        }
-                        className="px-2 py-1 text-xs border border-gray-200 dark:border-[rgba(255,255,255,0.08)] bg-white dark:bg-[#1e1e2a] text-gray-600 dark:text-[#c3c3cc] rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#6B2AEA]"
-                      >
-                        <option value="">Day (optional)</option>
-                        {itinerary.map((d) => (
-                          <option key={d.day} value={d.day}>
-                            Day {d.day}{d.city ? ` — ${d.city}` : ''}
-                          </option>
-                        ))}
-                      </select>
+                      {rows.length > 0 && (
+                        <select
+                          value={img.day ?? ''}
+                          onChange={(e) =>
+                            patchImage(i, {
+                              day: e.target.value ? parseInt(e.target.value, 10) : undefined,
+                            })
+                          }
+                          aria-label="Associate photo with an entry"
+                          className="px-2 py-1 text-xs border border-gray-200 dark:border-[rgba(255,255,255,0.08)] bg-white dark:bg-[#1e1e2a] text-gray-600 dark:text-[#c3c3cc] rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#6B2AEA]"
+                        >
+                          <option value="">Entry (optional)</option>
+                          {rows.map((r, idx) => {
+                            const tag = rowField ? (r[rowField] as string) : '';
+                            return (
+                              <option key={idx} value={idx + 1}>
+                                {idx + 1}
+                                {tag ? ` — ${tag}` : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      )}
                     </div>
 
                     <button
                       onClick={() => removeImage(i)}
+                      aria-label={`Remove photo ${i + 1}`}
                       className="text-gray-400 dark:text-[#70707d] hover:text-red-500 text-lg leading-none flex-shrink-0 mt-0.5"
                     >
                       ×
@@ -723,14 +631,10 @@ export function IntakeForm() {
               </div>
             )}
 
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                {error}
-              </div>
-            )}
+            {errorBox}
 
             <div className="flex gap-3">
-              <Button variant="secondary" onClick={() => setStep(3)} className="flex-shrink-0">
+              <Button variant="secondary" onClick={() => go(-1)} className="flex-shrink-0">
                 Back
               </Button>
               {completedImagesCount > 0 && (
@@ -741,8 +645,8 @@ export function IntakeForm() {
                   disabled={loading}
                 >
                   {loading
-                    ? 'Setting up interview...'
-                    : `Start Interview${completedImagesCount > 0 ? ` (${completedImagesCount} photo${completedImagesCount > 1 ? 's' : ''})` : ''}`}
+                    ? 'Setting up interview…'
+                    : `Start Interview (${completedImagesCount} photo${completedImagesCount > 1 ? 's' : ''})`}
                 </Button>
               )}
               <Button
@@ -750,9 +654,9 @@ export function IntakeForm() {
                 variant={completedImagesCount > 0 ? 'secondary' : undefined}
                 className={completedImagesCount > 0 ? 'flex-shrink-0' : 'flex-1'}
                 onClick={() => handleSubmit(true)}
-                disabled={loading}
+                disabled={loading || !isLast}
               >
-                {loading ? 'Setting up...' : completedImagesCount > 0 ? 'Skip photos' : 'Start Interview'}
+                {loading ? 'Setting up…' : completedImagesCount > 0 ? 'Skip photos' : 'Start Interview'}
               </Button>
             </div>
           </div>

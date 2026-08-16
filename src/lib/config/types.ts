@@ -53,6 +53,19 @@ export interface RepeatingSection {
   addButtonLabel: string;
   itemFields: FieldDefinition[];
   /**
+   * Optionally derive the number of rows from a top-level number field.
+   * The value is the `id` of a field in `IntakeConfig.fields` whose `type` is
+   * `'number'`; whenever that field changes, the intake form grows or shrinks
+   * this section to match, preserving any values already entered.
+   *
+   * Example: `rowCountFromField: 'trip_duration_days'` — a 5-day trip
+   * automatically renders 5 itinerary rows.
+   *
+   * Rows can always also be added and removed manually via the add button.
+   * Omit this to make the section purely manual.
+   */
+  rowCountFromField?: string;
+  /**
    * Optionally extract unique values from one item field and expose them in
    * InterviewContext. Example: extract unique cities from each day's `city`
    * field → `ctx.uniqueValues.cities`.

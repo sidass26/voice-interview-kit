@@ -30,8 +30,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files — never commit real ones
 .env*
+# ...but the placeholder template must ship, the setup guide tells people to copy it
+!.env.example
 
 # vercel
 .vercel

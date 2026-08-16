@@ -2,7 +2,7 @@
 @plugin "@tailwindcss/typography";
 @config "../../tailwind.config.js";
 
-/* ── Light mode (default) — clean Headout-branded light theme ── */
+/* ── Light mode (default) ── */
 :root {
   --background: #f8f8fc;
   --foreground: #111118;

@@ -53,9 +53,11 @@ The kit separates the **engine** (WebRTC session handling, orchestration, pipeli
 
 Being straight about this, because the config layer looks more finished than it is.
 
-**Working:** the full pipeline end to end; research, persona, extraction, and article prompts all driven by config; model, voice, and transcription settings config-driven; intake form and intake persistence being generalized right now.
+**Working:** the full pipeline end to end. Research, persona, extraction and article prompts all driven by config, as are the model, voice and transcription settings. The **intake form renders entirely from `config.intake.fields`** — including the repeating section, which disappears cleanly when a config doesn't declare one — and intake **persists to a generic `data` JSONB column**, so any config's fields survive without a schema change.
 
-**Not yet wired:** `branding`, `subject.label`, `interview.phases`, `connectors`, and `campaigns` are declared and typed but not yet read by the engine — the UI still hardcodes travel equivalents. Topic tracking uses a hardcoded checklist rather than `config.interview.phases`.
+**Not yet wired:** `interview.phases`, `connectors` and `campaigns` are declared and typed but not read by the engine. Topic tracking still injects a hardcoded travel checklist into every system prompt, which means an interview about something else will still get asked about restaurants. `subject.profileFields` renders, but its field ids must match `author_profiles` columns to save.
+
+**One known hole:** `author_profiles.work_email` is `UNIQUE NOT NULL` and the upsert keys on it, so author profiles still assume an email field exists.
 
 **So adopting this for a different domain today means engine work, not just a new config file.** The parts already domain-agnostic and safe to build on: the [`InterviewContext`](src/lib/config/types.ts) contract, plus `extractor.ts`, `article-generator.ts`, `research-service.ts`, and the realtime token route. Progress and ordering in the [Roadmap](#roadmap).
 
@@ -71,7 +73,44 @@ Being straight about this, because the config layer looks more finished than it 
 | Images | sharp + Supabase Storage |
 | Hosting | Vercel, or anywhere Next.js runs |
 
-## Quickstart
+## Setup
+
+Two ways in. **Path A needs no terminal and no code** — you'll click through three websites and paste one block of SQL. You do still need an OpenAI account with billing and a Supabase account, so it isn't quite zero-effort, but nothing here requires knowing how to code.
+
+### Before you start — two things to know
+
+> **There is no login.** Anyone who has a URL from your deployment can see every interview on it, and the app doesn't ask who they are. That's fine for trying this out with your own test interviews. **Don't collect real people's names, emails and recorded conversations until you've added authentication.**
+
+> **It costs roughly $1 per 15-minute interview** — the voice session plus the research call and five processing steps. There's no spend cap in the code. Add a payment method to OpenAI *before* you deploy: with no credit, the research step fails and the interview never unlocks.
+
+### Path A — deploy without a terminal
+
+**1. Create a Supabase project** at [supabase.com](https://supabase.com). Pick a region near you. Wait for it to finish provisioning.
+
+**2. Create the database tables.** In your project: **SQL Editor** → **New query** → paste the entire contents of [`supabase/schema.sql`](supabase/schema.sql) → **Run**. It's safe to run twice if something goes wrong.
+
+**3. Create the image bucket.** **Storage** → **New bucket** → name it exactly `trip-images` → turn **Public** on → Create.
+
+> Don't skip this. The bucket name is hardcoded, nothing creates it for you, and if it's missing photo uploads fail with an unhelpful error that doesn't mention buckets.
+
+**4. Get an OpenAI key** at [platform.openai.com/api-keys](https://platform.openai.com/api-keys). Confirm billing is set up under **Settings → Billing**.
+
+**5. Deploy.**
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fsidass26%2Fvoice-interview-kit&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,OPENAI_API_KEY&envDescription=Three%20values%20from%20Supabase%20%28Project%20Settings%20%E2%86%92%20API%29%20and%20one%20OpenAI%20API%20key&envLink=https%3A%2F%2Fgithub.com%2Fsidass26%2Fvoice-interview-kit%23setup)
+
+Vercel will ask for four values. The first three are in Supabase under **Project Settings → API**:
+
+| Paste this | Find it here |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → **Project URL** |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API → **anon public** |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → **service_role** (keep this secret) |
+| `OPENAI_API_KEY` | The key from step 4 |
+
+**6. Check it worked.** Open your new Vercel URL **in Chrome**, start an interview, and fill in the first step. Then look in Supabase → **Table Editor** → `intake_responses`. A row should be there.
+
+### Path B — run it locally
 
 ```bash
 git clone https://github.com/sidass26/voice-interview-kit.git
@@ -80,42 +119,39 @@ npm install
 cp .env.example .env.local
 ```
 
-Fill in `.env.local`:
-
-| Variable | Where to get it |
-|----------|-----------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase dashboard → Project Settings → API |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase dashboard → Project Settings → API |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase dashboard → Project Settings → API |
-| `OPENAI_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
-
-Create a Supabase project and run each file in [`supabase/migrations/`](supabase/migrations) (001 → 004, in order) in the SQL editor.
+Do steps 1–4 above, put the same four values in `.env.local`, then:
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) **in Chrome** — voice needs microphone permissions, and embedded preview browsers (VS Code panels and similar) block mic access.
+Open [http://localhost:3000](http://localhost:3000) **in Chrome**. Voice needs microphone permission, and embedded preview browsers (VS Code panels and similar) block mic access — a denied mic fails silently.
 
-> **Cost:** each interview spends real OpenAI credits — a ~15-minute Realtime voice session plus the research call and five pipeline steps. Watch your usage on the first few runs before turning anyone loose on it.
+> Already running an older version? Use [`supabase/migrations/`](supabase/migrations) and apply only the numbered files you haven't run, rather than `schema.sql`.
 
-## Deploying
+### If something breaks
 
-Standard Next.js deploy. On [Vercel](https://vercel.com): import the repo, add the same four environment variables, done.
-
-> **No auth.** The app ships auth-free — anyone with the URL sees every session. Add authentication and Supabase RLS before putting it anywhere public.
+| What you see | What it means |
+|---|---|
+| Photo upload fails, or a 500 on upload | The `trip-images` bucket is missing or not public — step 3 |
+| "Failed to create realtime session" | No OpenAI credit, or `gpt-4o-realtime-preview` has been retired. Model names live in [`interview.config.ts`](interview.config.ts) under `interview:` |
+| Interview never unlocks, spinner forever | The research call failed — almost always OpenAI billing. Check your Vercel function logs |
+| The whole app stopped working after a week | Supabase pauses free-tier projects after 7 days idle. Un-pause it in the dashboard |
+| Microphone does nothing | Use Chrome or Safari directly on the deployed HTTPS URL, and accept the permission prompt |
 
 ## Roadmap
 
 Toward a genuinely config-driven kit, in dependency order:
 
-1. 🚧 Render intake dynamically from `config.intake.fields`; make the repeating section optional
-2. 🚧 Persist intake to the generic `data JSONB` column
-3. Guard the payload builder against non-travel extraction shapes
-4. Drive topic tracking from `config.interview.phases` instead of a hardcoded checklist
-5. Read `config.branding` in the UI instead of hardcoded strings
-6. Ship an `examples/` directory with a non-travel reference config
-7. Test coverage — currently none, and it's the main thing blocking safe contribution
+- [x] Render intake dynamically from `config.intake.fields`; make the repeating section optional
+- [x] Persist intake to the generic `data JSONB` column
+- [x] Guard the payload builder against non-travel extraction shapes
+- [ ] Drive topic tracking from `config.interview.phases` instead of a hardcoded checklist
+- [ ] Generalize author profiles so they don't require an email-shaped field
+- [ ] Read `config.branding` everywhere in the UI, not just the intake page
+- [ ] Ship an `examples/` directory with a non-travel reference config
+- [ ] Application auth, so this can hold real people's data
+- [ ] Test coverage — currently none, and it's the main thing blocking safe contribution
 
 Also planned: one-click CMS publishing via the connector layer, spin-off articles from a single interview, and interview quality scoring to flag thin sessions before they reach the pipeline.
 
